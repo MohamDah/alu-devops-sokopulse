@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SokoPulse</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>SokoPulse</h1>
+    <p>Commodity prices, a USSD menu and a MoMo payment simulator. Demo data only: no real money moves.</p>
+  </header>
+
+  <main>
+    <section id="prices">
+      <h2>Market prices (RWF per kg)</h2>
+      <div class="row">
+        <label>Commodity <select id="commodity"><option value="">All</option></select></label>
+        <label>Market <select id="market"><option value="">All</option></select></label>
+      </div>
+      <p id="arbitrage" class="note" aria-live="polite"></p>
+      <table>
+        <thead><tr><th>Commodity</th><th>Market</th><th>Wholesale</th><th>Retail</th><th>Trend</th></tr></thead>
+        <tbody id="price-rows"></tbody>
+      </table>
+    </section>
+
+    <section id="ussd">
+      <h2>USSD dialer</h2>
+      <pre id="ussd-screen" aria-live="polite">Press Dial to start.</pre>
+      <form id="ussd-form" class="row">
+        <button type="button" id="ussd-dial">Dial *182#</button>
+        <input id="ussd-choice" inputmode="numeric" pattern="[0-9]+" placeholder="Choice" aria-label="Menu choice" disabled required>
+        <button type="submit" id="ussd-send" disabled>Send</button>
+      </form>
+    </section>
+
+    <section id="momo">
+      <h2>MoMo payment</h2>
+      <form id="pay-form">
+        <label>Buyer phone <input name="buyerPhone" value="0781234567" required></label>
+        <label>Farmer phone <input name="farmerPhone" value="0791234567" required></label>
+        <label>Commodity <input name="commodity" value="Red Beans" required></label>
+        <label>Quantity (kg) <input name="quantityKg" type="number" min="1" step="1" value="25" required></label>
+        <label>Price per kg (RWF) <input name="pricePerKg" type="number" min="1" step="1" value="1200" required></label>
+        <label>Scenario
+          <select name="scenario">
+            <option value="success">Success</option>
+            <option value="insufficient_funds">Insufficient funds</option>
+            <option value="pin_timeout">PIN timeout</option>
+          </select>
+        </label>
+        <button type="submit">Simulate payment</button>
+      </form>
+      <p id="pay-result" class="note" aria-live="polite"></p>
+      <table>
+        <thead><tr><th>Reference</th><th>Commodity</th><th>Subtotal</th><th>Fee</th><th>Net payout</th><th>Status</th></tr></thead>
+        <tbody id="tx-rows"></tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

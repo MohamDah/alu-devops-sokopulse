@@ -66,6 +66,47 @@ describe('USSD API', () => {
   });
 });
 
+describe('MoMo API', () => {
+  const trade = { buyerPhone: '0781234567', farmerPhone: '0791234567', commodity: 'Red Beans', quantityKg: 25, pricePerKg: 1200 };
+
+  test('POST /api/momo/pay simulates a payment with fee and net payout', async () => {
+    const res = await request(app).post('/api/momo/pay').send(trade).expect(201);
+    expect(res.body).toEqual(expect.objectContaining({
+      status: 'SUCCESSFUL', subtotal: 30000, transactionFee: 300, netFarmerPayout: 29700, currency: 'RWF',
+    }));
+    expect(res.body.reference).toMatch(/^SOKO-/);
+  });
+
+  test('failure scenarios are deterministic and still recorded', async () => {
+    const res = await request(app).post('/api/momo/pay').send({ ...trade, scenario: 'insufficient_funds' }).expect(201);
+    expect(res.body.status).toBe('FAILED');
+  });
+
+  test('validates input with 400 and does not record the attempt', async () => {
+    const isolated = createApp();
+    await request(isolated).post('/api/momo/pay').send({ ...trade, buyerPhone: '0711234567' }).expect(400);
+    await request(isolated).post('/api/momo/pay').expect(400);
+    const list = await request(isolated).get('/api/momo/transactions').expect(200);
+    expect(list.body).toEqual([]);
+  });
+
+  test('GET /api/momo/transactions lists payments newest first', async () => {
+    const isolated = createApp();
+    const first = await request(isolated).post('/api/momo/pay').send(trade);
+    const second = await request(isolated).post('/api/momo/pay').send({ ...trade, quantityKg: 1 });
+    const list = await request(isolated).get('/api/momo/transactions').expect(200);
+    expect(list.body.map((t) => t.reference)).toEqual([second.body.reference, first.body.reference]);
+  });
+  test('unexpected errors return a safe 500 without leaking details', async () => {
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(Date.prototype, 'toISOString').mockImplementationOnce(() => { throw new Error('secret internals'); });
+    const res = await request(createApp()).post('/api/momo/pay').send(trade).expect(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(consoleError).toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+});
+
 describe('config', () => {
   test('defaults to port 3000', () => {
     expect(loadConfig({})).toEqual({ port: 3000 });

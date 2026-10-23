@@ -6,6 +6,8 @@ const { createPriceService } = require('./services/price-service/price.service')
 const { createPriceRouter } = require('./services/price-service/price.routes');
 const { createUssdService } = require('./services/ussd-service/ussd.service');
 const { createUssdRouter } = require('./services/ussd-service/ussd.routes');
+const { createMomoService } = require('./services/momo-service/momo.service');
+const { createMomoRouter } = require('./services/momo-service/momo.routes');
 
 function createApp() {
   const app = express();
@@ -17,6 +19,7 @@ function createApp() {
       getArbitrage: (commodity) => priceService.getArbitrage(commodity),
     },
   });
+  const momoService = createMomoService();
 
   // Local demo runs over plain HTTP, so don't force upgrades to HTTPS.
   app.use(helmet({
@@ -29,6 +32,7 @@ function createApp() {
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
   app.use('/api/prices', createPriceRouter(priceService));
   app.use('/api/ussd', createUssdRouter(ussdService));
+  app.use('/api/momo', createMomoRouter(momoService));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 

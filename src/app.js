@@ -1,9 +1,13 @@
 const path = require('node:path');
 const express = require('express');
 const helmet = require('helmet');
+const seedMarkets = require('./data/seedMarkets');
+const { createPriceService } = require('./services/price-service/price.service');
+const { createPriceRouter } = require('./services/price-service/price.routes');
 
 function createApp() {
   const app = express();
+  const priceService = createPriceService(seedMarkets);
 
   // Local demo runs over plain HTTP, so don't force upgrades to HTTPS.
   app.use(helmet({
@@ -14,6 +18,7 @@ function createApp() {
   app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+  app.use('/api/prices', createPriceRouter(priceService));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 

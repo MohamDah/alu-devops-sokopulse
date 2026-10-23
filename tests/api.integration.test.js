@@ -21,6 +21,27 @@ describe('app basics', () => {
   });
 });
 
+describe('prices API', () => {
+  test('GET /api/prices returns all quotes and supports filters', async () => {
+    const all = await request(app).get('/api/prices').expect(200);
+    expect(all.body).toHaveLength(20);
+    const filtered = await request(app).get('/api/prices?commodity=Rice&market=Huye').expect(200);
+    expect(filtered.body).toHaveLength(1);
+    expect(filtered.body[0]).toEqual(expect.objectContaining({ commodity: 'Rice', market: 'Huye', currency: 'RWF' }));
+  });
+
+  test('GET /api/prices/arbitrage returns the best market and spread', async () => {
+    const res = await request(app).get('/api/prices/arbitrage?commodity=Maize').expect(200);
+    expect(res.body.bestMarketToSell.market).toBe('Kimironko-Kigali');
+    expect(res.body.spread).toBe(55);
+  });
+
+  test('GET /api/prices/arbitrage validates the commodity', async () => {
+    await request(app).get('/api/prices/arbitrage').expect(400);
+    await request(app).get('/api/prices/arbitrage?commodity=Gold').expect(404);
+  });
+});
+
 describe('config', () => {
   test('defaults to port 3000', () => {
     expect(loadConfig({})).toEqual({ port: 3000 });

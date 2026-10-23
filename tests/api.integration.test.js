@@ -107,6 +107,15 @@ describe('MoMo API', () => {
   });
 });
 
+describe('dashboard', () => {
+  test('serves the static dashboard files', async () => {
+    const page = await request(app).get('/').expect(200).expect('Content-Type', /html/);
+    expect(page.text).toContain('SokoPulse');
+    await request(app).get('/styles.css').expect(200).expect('Content-Type', /css/);
+    await request(app).get('/app.js').expect(200).expect('Content-Type', /javascript/);
+  });
+});
+
 describe('config', () => {
   test('defaults to port 3000', () => {
     expect(loadConfig({})).toEqual({ port: 3000 });

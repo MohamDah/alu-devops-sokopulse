@@ -1,0 +1,24 @@
+# Default reviewer for anything not listed below
+*                                   @MohamDah
+
+# DevOps, governance and configuration
+/.github/                           @MohamDah
+/.gitignore                         @MohamDah
+/.env.example                       @MohamDah
+/LICENSE                            @MohamDah
+/package.json                       @MohamDah
+/package-lock.json                  @MohamDah
+/Dockerfile                         @MohamDah
+/docker-compose.yml                 @MohamDah
+/terraform/                         @MohamDah
+
+# Application code: each service has its own owner
+/src/                               @MohamDah
+/src/services/price-service/        @Promesse44
+/src/services/ussd-service/         @Christia3
+/src/services/momo-service/         @Christia3
+
+# Dashboard, tests and documentation
+/public/                            @Samuellacodes
+/tests/                             @Samuellacodes
+/README.md                          @Samuellacodes

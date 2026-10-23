@@ -1,0 +1,298 @@
+diff --git a/src/app.js b/src/app.js
+index a1631aa..1c74812 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -6,6 +6,8 @@ const { createPriceService } = require('./services/price-service/price.service')
+ const { createPriceRouter } = require('./services/price-service/price.routes');
+ const { createUssdService } = require('./services/ussd-service/ussd.service');
+ const { createUssdRouter } = require('./services/ussd-service/ussd.routes');
++const { createMomoService } = require('./services/momo-service/momo.service');
++const { createMomoRouter } = require('./services/momo-service/momo.routes');
+ 
+ function createApp() {
+   const app = express();
+@@ -17,6 +19,7 @@ function createApp() {
+       getArbitrage: (commodity) => priceService.getArbitrage(commodity),
+     },
+   });
++  const momoService = createMomoService();
+ 
+   // Local demo runs over plain HTTP, so don't force upgrades to HTTPS.
+   app.use(helmet({
+@@ -29,6 +32,7 @@ function createApp() {
+   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+   app.use('/api/prices', createPriceRouter(priceService));
+   app.use('/api/ussd', createUssdRouter(ussdService));
++  app.use('/api/momo', createMomoRouter(momoService));
+ 
+   app.use(express.static(path.join(__dirname, '..', 'public')));
+ 
+diff --git a/src/services/momo-service/momo.routes.js b/src/services/momo-service/momo.routes.js
+new file mode 100644
+index 0000000..cf3fd90
+--- /dev/null
++++ b/src/services/momo-service/momo.routes.js
+@@ -0,0 +1,19 @@
++const express = require('express');
++
++function createMomoRouter(service) {
++  const router = express.Router();
++
++  // POST /api/momo/pay  simulates a buyer-to-farmer payment (no real money moves)
++  router.post('/pay', (req, res) => {
++    res.status(201).json(service.pay(req.body));
++  });
++
++  // GET /api/momo/transactions  newest first
++  router.get('/transactions', (req, res) => {
++    res.json(service.listTransactions());
++  });
++
++  return router;
++}
++
++module.exports = { createMomoRouter };
+diff --git a/src/services/momo-service/momo.service.js b/src/services/momo-service/momo.service.js
+new file mode 100644
+index 0000000..a35f0e6
+--- /dev/null
++++ b/src/services/momo-service/momo.service.js
+@@ -0,0 +1,84 @@
++const { randomUUID } = require('node:crypto');
++
++// Simulated fee tiers in RWF (illustrative, not a real provider's tariff). The fee is deducted from the farmer's payout.
++const FEE_TIERS = [
++  { upTo: 5000, fee: 50 },
++  { upTo: 50000, fee: 300 },
++  { upTo: 500000, fee: 1500 },
++  { upTo: Infinity, fee: 5000 },
++];
++
++// Deterministic outcomes: the caller chooses the scenario, so tests and demos are repeatable.
++const SCENARIOS = {
++  success: null,
++  insufficient_funds: 'Buyer has insufficient funds (simulated).',
++  pin_timeout: 'Buyer did not confirm the PIN prompt in time (simulated).',
++};
++
++// Rwandan numbers: 078x / 079x (MTN) and 072x / 073x (Airtel), also accepted as +250 or 250.
++const MSISDN = /^(?:\+?250|0)(7[2389]\d{7})$/;
++
++function httpError(status, message) {
++  return Object.assign(new Error(message), { status });
++}
++
++function normalizePhone(value, label) {
++  const match = typeof value === 'string' ? MSISDN.exec(value) : null;
++  if (!match) throw httpError(400, `${label} must be a Rwandan number starting 078, 079, 072 or 073`);
++  return `0${match[1]}`;
++}
++
++const mask = (phone) => `${phone.slice(0, 3)}****${phone.slice(-3)}`;
++const isPositiveInt = (n) => Number.isSafeInteger(n) && n > 0;
++
++function calculateFee(subtotal) {
++  return FEE_TIERS.find((tier) => subtotal <= tier.upTo).fee;
++}
++
++function createMomoService() {
++  const transactions = [];
++
++  function pay({ buyerPhone, farmerPhone, commodity, quantityKg, pricePerKg, scenario = 'success' } = {}) {
++    const buyer = normalizePhone(buyerPhone, 'buyerPhone');
++    const farmer = normalizePhone(farmerPhone, 'farmerPhone');
++    if (buyer === farmer) throw httpError(400, 'buyerPhone and farmerPhone must be different');
++    if (typeof commodity !== 'string' || !commodity.trim() || commodity.length > 60) {
++      throw httpError(400, 'commodity must be 1-60 characters');
++    }
++    if (!isPositiveInt(quantityKg) || !isPositiveInt(pricePerKg) || !Number.isSafeInteger(quantityKg * pricePerKg)) {
++      throw httpError(400, 'quantityKg and pricePerKg must be positive whole numbers');
++    }
++    if (!Object.hasOwn(SCENARIOS, scenario)) {
++      throw httpError(400, `scenario must be one of: ${Object.keys(SCENARIOS).join(', ')}`);
++    }
++
++    const subtotal = quantityKg * pricePerKg;
++    const transactionFee = calculateFee(subtotal);
++    const failureReason = SCENARIOS[scenario];
++    const transaction = {
++      reference: `SOKO-${randomUUID().slice(0, 8).toUpperCase()}`,
++      status: failureReason ? 'FAILED' : 'SUCCESSFUL',
++      commodity: commodity.trim(),
++      quantityKg,
++      pricePerKg,
++      currency: 'RWF',
++      subtotal,
++      transactionFee,
++      netFarmerPayout: subtotal - transactionFee,
++      buyerPhone: mask(buyer),
++      farmerPhone: mask(farmer),
++      failureReason,
++      createdAt: new Date().toISOString(),
++    };
++    transactions.push(transaction);
++    return { ...transaction };
++  }
++
++  function listTransactions() {
++    return transactions.map((t) => ({ ...t })).reverse();
++  }
++
++  return { pay, listTransactions };
++}
++
++module.exports = { createMomoService, FEE_TIERS };
+diff --git a/tests/api.integration.test.js b/tests/api.integration.test.js
+index 2edf4e9..4538fd2 100644
+--- a/tests/api.integration.test.js
++++ b/tests/api.integration.test.js
+@@ -66,6 +66,47 @@ describe('USSD API', () => {
+   });
+ });
+ 
++describe('MoMo API', () => {
++  const trade = { buyerPhone: '0781234567', farmerPhone: '0791234567', commodity: 'Red Beans', quantityKg: 25, pricePerKg: 1200 };
++
++  test('POST /api/momo/pay simulates a payment with fee and net payout', async () => {
++    const res = await request(app).post('/api/momo/pay').send(trade).expect(201);
++    expect(res.body).toEqual(expect.objectContaining({
++      status: 'SUCCESSFUL', subtotal: 30000, transactionFee: 300, netFarmerPayout: 29700, currency: 'RWF',
++    }));
++    expect(res.body.reference).toMatch(/^SOKO-/);
++  });
++
++  test('failure scenarios are deterministic and still recorded', async () => {
++    const res = await request(app).post('/api/momo/pay').send({ ...trade, scenario: 'insufficient_funds' }).expect(201);
++    expect(res.body.status).toBe('FAILED');
++  });
++
++  test('validates input with 400 and does not record the attempt', async () => {
++    const isolated = createApp();
++    await request(isolated).post('/api/momo/pay').send({ ...trade, buyerPhone: '0711234567' }).expect(400);
++    await request(isolated).post('/api/momo/pay').expect(400);
++    const list = await request(isolated).get('/api/momo/transactions').expect(200);
++    expect(list.body).toEqual([]);
++  });
++
++  test('GET /api/momo/transactions lists payments newest first', async () => {
++    const isolated = createApp();
++    const first = await request(isolated).post('/api/momo/pay').send(trade);
++    const second = await request(isolated).post('/api/momo/pay').send({ ...trade, quantityKg: 1 });
++    const list = await request(isolated).get('/api/momo/transactions').expect(200);
++    expect(list.body.map((t) => t.reference)).toEqual([second.body.reference, first.body.reference]);
++  });
++  test('unexpected errors return a safe 500 without leaking details', async () => {
++    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
++    jest.spyOn(Date.prototype, 'toISOString').mockImplementationOnce(() => { throw new Error('secret internals'); });
++    const res = await request(createApp()).post('/api/momo/pay').send(trade).expect(500);
++    expect(res.body).toEqual({ error: 'Internal server error' });
++    expect(consoleError).toHaveBeenCalled();
++    jest.restoreAllMocks();
++  });
++});
++
+ describe('config', () => {
+   test('defaults to port 3000', () => {
+     expect(loadConfig({})).toEqual({ port: 3000 });
+diff --git a/tests/momo.service.test.js b/tests/momo.service.test.js
+new file mode 100644
+index 0000000..5fc12d1
+--- /dev/null
++++ b/tests/momo.service.test.js
+@@ -0,0 +1,96 @@
++const { createMomoService } = require('../src/services/momo-service/momo.service');
++
++const trade = {
++  buyerPhone: '0781234567',
++  farmerPhone: '0791234567',
++  commodity: 'Red Beans',
++  quantityKg: 25,
++  pricePerKg: 1200,
++};
++
++describe('MoMo service', () => {
++  test('calculates subtotal, fee and net farmer payout in RWF', () => {
++    const tx = createMomoService().pay(trade);
++    expect(tx).toEqual(expect.objectContaining({
++      status: 'SUCCESSFUL',
++      currency: 'RWF',
++      subtotal: 30000,
++      transactionFee: 300,
++      netFarmerPayout: 29700,
++      failureReason: null,
++    }));
++  });
++
++  test.each([
++    [1, 5000, 50, 4950],
++    [1, 5001, 300, 4701],
++    [1, 50000, 300, 49700],
++    [1, 50001, 1500, 48501],
++    [1, 500000, 1500, 498500],
++    [1, 500001, 5000, 495001],
++  ])('fee tier boundaries: %i kg x %i RWF -> fee %i', (quantityKg, pricePerKg, fee, net) => {
++    const tx = createMomoService().pay({ ...trade, quantityKg, pricePerKg });
++    expect(tx.transactionFee).toBe(fee);
++    expect(tx.netFarmerPayout).toBe(net);
++  });
++
++  test('returns a simulated reference ID and masks phone numbers', () => {
++    const tx = createMomoService().pay(trade);
++    expect(tx.reference).toMatch(/^SOKO-[0-9A-F]{8}$/);
++    expect(tx.buyerPhone).toBe('078****567');
++    expect(tx.farmerPhone).toBe('079****567');
++    expect(JSON.stringify(tx)).not.toContain('1234567');
++  });
++
++  test.each([
++    ['insufficient_funds', 'insufficient funds'],
++    ['pin_timeout', 'PIN prompt'],
++  ])('scenario %s fails deterministically', (scenario, reason) => {
++    const tx = createMomoService().pay({ ...trade, scenario });
++    expect(tx.status).toBe('FAILED');
++    expect(tx.failureReason).toContain(reason);
++  });
++
++  test.each(['0781234567', '0791234567', '0721234567', '0731234567', '+250781234567', '250781234567'])(
++    'accepts Rwandan number %s', (buyerPhone) => {
++      expect(createMomoService().pay({ ...trade, buyerPhone, farmerPhone: '0791111111' }).status).toBe('SUCCESSFUL');
++    },
++  );
++
++  test.each([undefined, '0711234567', '078123456', '07812345678', '+254712345678', 'abc', 781234567])(
++    'rejects invalid phone %p', (buyerPhone) => {
++      expect(() => createMomoService().pay({ ...trade, buyerPhone })).toThrow('buyerPhone');
++    },
++  );
++
++  test('rejects the same buyer and farmer', () => {
++    expect(() => createMomoService().pay({ ...trade, farmerPhone: '+250781234567' })).toThrow('different');
++  });
++
++  test.each([
++    [{ commodity: '' }],
++    [{ commodity: 5 }],
++    [{ quantityKg: 0 }],
++    [{ quantityKg: 1.5 }],
++    [{ pricePerKg: -1 }],
++    [{ pricePerKg: '1200' }],
++    [{ quantityKg: 1e10, pricePerKg: 1e10 }],
++    [{ scenario: 'chaos' }],
++  ])('rejects invalid trade %j', (override) => {
++    expect(() => createMomoService().pay({ ...trade, ...override })).toThrow();
++  });
++
++  test('rejects a missing body', () => {
++    expect(() => createMomoService().pay()).toThrow('buyerPhone');
++  });
++
++  test('lists transactions newest first without exposing the internal store', () => {
++    const service = createMomoService();
++    const first = service.pay(trade);
++    const second = service.pay({ ...trade, quantityKg: 1 });
++    const list = service.listTransactions();
++    expect(list.map((t) => t.reference)).toEqual([second.reference, first.reference]);
++    list[0].status = 'TAMPERED';
++    expect(service.listTransactions()[0].status).toBe('SUCCESSFUL');
++  });
++});

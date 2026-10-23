@@ -1,0 +1,30 @@
+{
+  "name": "sokopulse-devops",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SokoPulse: commodity prices, USSD menu and MoMo payment simulator (DevOps course project).",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "jest --ci",
+    "test:coverage": "jest --ci --coverage"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "collectCoverageFrom": ["src/**/*.js", "!src/server.js"]
+  },
+  "license": "MIT"
+}

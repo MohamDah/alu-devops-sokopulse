@@ -4,10 +4,19 @@ const helmet = require('helmet');
 const seedMarkets = require('./data/seedMarkets');
 const { createPriceService } = require('./services/price-service/price.service');
 const { createPriceRouter } = require('./services/price-service/price.routes');
+const { createUssdService } = require('./services/ussd-service/ussd.service');
+const { createUssdRouter } = require('./services/ussd-service/ussd.routes');
 
 function createApp() {
   const app = express();
   const priceService = createPriceService(seedMarkets);
+  // The only link between the services: USSD reads prices through this small interface.
+  const ussdService = createUssdService({
+    priceProvider: {
+      listPrices: (filters) => priceService.listPrices(filters),
+      getArbitrage: (commodity) => priceService.getArbitrage(commodity),
+    },
+  });
 
   // Local demo runs over plain HTTP, so don't force upgrades to HTTPS.
   app.use(helmet({
@@ -19,6 +28,7 @@ function createApp() {
 
   app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
   app.use('/api/prices', createPriceRouter(priceService));
+  app.use('/api/ussd', createUssdRouter(ussdService));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
 

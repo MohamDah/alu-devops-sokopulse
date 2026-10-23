@@ -42,6 +42,30 @@ describe('prices API', () => {
   });
 });
 
+describe('USSD API', () => {
+  test('walks the *182# menu from main menu to a live price', async () => {
+    const main = await request(app).post('/api/ussd').send({ text: '' }).expect(200).expect('Content-Type', /text\/plain/);
+    expect(main.text).toMatch(/^CON/);
+    const crops = await request(app).post('/api/ussd').send({ text: '1' }).expect(200);
+    expect(crops.text).toContain('1. Maize');
+    const markets = await request(app).post('/api/ussd').send({ text: '1*1' }).expect(200);
+    expect(markets.text).toContain('Kimironko-Kigali');
+    const price = await request(app).post('/api/ussd').send({ text: '1*1*1' }).expect(200);
+    expect(price.text).toMatch(/^END Maize at Kimironko-Kigali\nWholesale: 450 RWF\/kg/);
+  });
+
+  test('accepts form-encoded requests like a real USSD gateway', async () => {
+    const res = await request(app).post('/api/ussd').type('form').send({ text: '2*1' }).expect(200);
+    expect(res.text).toMatch(/^END Best market for Maize/);
+  });
+
+  test('rejects malformed text and treats a missing body as the main menu', async () => {
+    await request(app).post('/api/ussd').send({ text: 'abc' }).expect(400);
+    const res = await request(app).post('/api/ussd').expect(200);
+    expect(res.text).toMatch(/^CON/);
+  });
+});
+
 describe('config', () => {
   test('defaults to port 3000', () => {
     expect(loadConfig({})).toEqual({ port: 3000 });

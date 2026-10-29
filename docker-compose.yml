@@ -1,0 +1,27 @@
+services:
+  app:
+    # Build the image from the Dockerfile in this folder
+    build: .
+    image: sokopulse:latest
+    ports:
+      # Host port comes from PORT in your .env file (default 3000)
+      - "${PORT:-3000}:3000"
+    environment:
+      # The app always listens on 3000 inside the container
+      PORT: 3000
+      NODE_ENV: production
+    # Restart after a crash, unless it was stopped on purpose
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - soko-net
+
+# The app needs no database, so there is nothing to persist and no volume.
+# Add a volume here when a database service is added.
+networks:
+  soko-net:

@@ -1,0 +1,21 @@
+# Dependencies and build output are recreated inside the image
+node_modules
+coverage
+
+# Git and CI files are not needed at runtime
+.git
+.github
+
+# Local secrets and environment files
+.env
+.env.*
+
+# Tests, docs and dev tooling
+tests
+*.md
+eslint.config.js
+
+# Docker files themselves
+Dockerfile
+docker-compose.yml
+.dockerignore

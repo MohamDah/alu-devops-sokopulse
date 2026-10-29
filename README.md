@@ -49,7 +49,7 @@ This formative covers the project foundation and secure collaboration: a secured
 | Backend | Node.js 20+, Express 5, JavaScript (CommonJS), Helmet, dotenv |
 | Frontend | Plain HTML, CSS and JavaScript (no framework, no build step) |
 | Database / data layer | Seeded JavaScript data and in-memory arrays. No external database; state resets on restart |
-| Testing & DevOps | Jest, Supertest, npm scripts, Git and GitHub (branch protection, CODEOWNERS, PR template) |
+| Testing & DevOps | Jest, Supertest, Docker, Docker Compose, Git and GitHub (branch protection, CODEOWNERS, PR template) |
 
 ## Getting Started
 
@@ -57,6 +57,7 @@ This formative covers the project foundation and secure collaboration: a secured
 
 - Node.js 20 or later and npm
 - Git
+- Docker Desktop (optional, only for the Docker Compose route)
 - `curl` (optional, for the API examples)
 
 ### Installation
@@ -108,6 +109,31 @@ curl "http://localhost:3000/api/momo/transactions"
 
 Set `"scenario"` to `insufficient_funds` or `pin_timeout` for a deterministic failed payment (still returned as HTTP 201 with `"status":"FAILED"`). Invalid input returns HTTP 400. Fee tiers (simulated, deducted from the farmer): up to 5,000 RWF = 50; up to 50,000 = 300; up to 500,000 = 1,500; above = 5,000.
 
+### Run with Docker Compose
+
+Docker packages the app so it runs the same on every machine. You only need Docker Desktop (or Docker Engine with the Compose plugin); Node.js is not required for this route.
+
+```bash
+cp .env.example .env        # optional: sets the port on your machine
+docker compose up --build
+```
+
+Open http://localhost:3000. Useful commands:
+
+```bash
+docker compose ps           # shows the container and its health (healthy)
+docker compose logs -f      # follow the app logs
+docker compose down         # stop and remove the container
+```
+
+How it is set up:
+
+- **`Dockerfile`:** two stages on `node:20-alpine`. The first installs production dependencies, the second is a small runtime image. It runs as the non-root `node` user and has a health check on `/api/health`.
+- **`docker-compose.yml`:** one `app` service built from the Dockerfile, with a restart policy, a health check and a named network.
+- **Port:** the app always listens on 3000 inside the container. To use another port on your machine, set `PORT` in `.env` (for example `PORT=8080`) and open http://localhost:8080.
+- **Data:** the app has no database, so there is no volume. Transactions are kept in memory and reset when the container restarts.
+- **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
+
 ## Project Structure
 
 ```text
@@ -126,9 +152,12 @@ alu-devops-sokopulse/
 │   ├── app.js                  # builds the Express app and wires the services
 │   └── server.js               # starts the server
 ├── tests/                      # Jest unit tests per service + API integration tests
+├── .dockerignore
 ├── .env.example
 ├── .gitignore
+├── Dockerfile
 ├── LICENSE
+├── docker-compose.yml
 ├── package.json
 ├── package-lock.json
 └── README.md

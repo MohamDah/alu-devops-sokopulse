@@ -8,7 +8,8 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "jest --ci",
-    "test:coverage": "jest --ci --coverage"
+    "test:coverage": "jest --ci --coverage",
+    "lint": "eslint ."
   },
   "engines": {
     "node": ">=20"
@@ -19,12 +20,18 @@
     "helmet": "^8.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.13.0",
     "jest": "^30.2.0",
     "supertest": "^7.1.4"
   },
   "jest": {
     "testEnvironment": "node",
-    "collectCoverageFrom": ["src/**/*.js", "!src/server.js"]
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js"
+    ]
   },
   "license": "MIT"
 }

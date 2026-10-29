@@ -2,6 +2,8 @@
 
 > Real-Time Agricultural Commodity Price Tracker, USSD Gateway & MoMo Trade Simulator for East African Smallholder Farmers
 
+[![CI](https://github.com/MohamDah/alu-devops-sokopulse/actions/workflows/ci.yml/badge.svg)](https://github.com/MohamDah/alu-devops-sokopulse/actions/workflows/ci.yml)
+
 ## African Context
 
 Many smallholder farmers in Rwanda and across East Africa sell at the farm gate without knowing what their crop fetches in town. Buyers and traders who travel between markets know the going rates, the farmer usually does not, and that gap in information (price asymmetry) makes it hard to tell a fair offer from a low one. Prices also differ from market to market, so the same bag of beans can be worth more in Kigali than in Rubavu.
@@ -49,7 +51,7 @@ This formative covers the project foundation and secure collaboration: a secured
 | Backend | Node.js 20+, Express 5, JavaScript (CommonJS), Helmet, dotenv |
 | Frontend | Plain HTML, CSS and JavaScript (no framework, no build step) |
 | Database / data layer | Seeded JavaScript data and in-memory arrays. No external database; state resets on restart |
-| Testing & DevOps | Jest, Supertest, Docker, Docker Compose, Git and GitHub (branch protection, CODEOWNERS, PR template) |
+| Testing & DevOps | Jest, Supertest, ESLint, GitHub Actions, Docker, Docker Compose, Git and GitHub (branch protection, CODEOWNERS, PR template) |
 
 ## Getting Started
 
@@ -134,11 +136,37 @@ How it is set up:
 - **Data:** the app has no database, so there is no volume. Transactions are kept in memory and reset when the container restarts.
 - **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
 
+## Continuous Integration
+
+A GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) checks every change automatically.
+
+**When it runs:** on pushes to any branch except `main`, and on pull requests into `main`.
+
+**What it does** (one job named `ci`, each step stops the run if it fails):
+
+1. Check out the code
+2. Set up Node.js 20 (with the npm cache)
+3. Install dependencies with `npm ci`
+4. Lint with ESLint (`npm run lint`)
+5. Run the Jest tests (`npm test`)
+6. Build the Docker image
+
+**Run the same checks locally** before you push:
+
+```bash
+npm run lint
+npm test
+docker build -t sokopulse:ci .
+```
+
+**Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests and the Docker build. The CI badge at the top shows the result of the latest run.
+
 ## Project Structure
 
 ```text
 alu-devops-sokopulse/
 ├── .github/
+│   ├── workflows/ci.yml        # CI: lint, test, Docker build
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── public/                     # dashboard (HTML, CSS, JS)
@@ -158,6 +186,7 @@ alu-devops-sokopulse/
 ├── Dockerfile
 ├── LICENSE
 ├── docker-compose.yml
+├── eslint.config.js
 ├── package.json
 ├── package-lock.json
 └── README.md
@@ -192,7 +221,7 @@ Each service folder holds its own routes and its own logic, and keeps its own da
 | Require pull request | On | Every change is proposed, discussed and recorded; nobody pushes straight to `main`. |
 | 1 approval | At least 1 approving review | A second person sees every change, which shares knowledge and catches mistakes. |
 | Dismiss stale approvals | On | If new commits are pushed, the earlier approval no longer counts; reviewers approve what actually merges. |
-| Status checks | On (strict). No checks are required yet | Automated checks become merge gates once CI exists. Until then the rule is a placeholder. |
+| Status checks | On (strict). The `ci` check (lint, tests, Docker build) is required | A change cannot merge unless the automated checks pass, so verification does not depend on one person's local run. |
 | Up-to-date branches | On | A branch must include the latest `main` before merging, so it is tested against current code. |
 | Conversation resolution | On | Review comments must be resolved, not ignored. |
 | Include administrators | On | The owner follows the same rules as everyone else. Force pushes and branch deletion are also blocked. |

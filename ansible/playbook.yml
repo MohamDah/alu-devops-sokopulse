@@ -1,0 +1,36 @@
+- name: Set up SokoPulse
+  hosts: sokopulse
+  become: true
+  vars:
+    app_image: sokopulse:f3
+    app_archive: "{{ playbook_dir }}/../sokopulse-image.tar"
+
+  pre_tasks:
+    - name: Check deployment settings
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == 'Ubuntu'
+          - ansible_facts['architecture'] == 'x86_64'
+          - admin_source_cidr is defined
+          - admin_source_cidr is match('^[0-9.]+/[0-9]+$')
+          - admin_source_cidr != '0.0.0.0/0'
+        fail_msg: Use an Ubuntu amd64 VM and set a restricted admin_source_cidr.
+
+    - name: Check the local image archive
+      ansible.builtin.stat:
+        path: "{{ app_archive }}"
+      delegate_to: localhost
+      become: false
+      register: local_archive
+
+    - name: Make sure the image was built
+      ansible.builtin.assert:
+        that:
+          - local_archive.stat.exists
+          - local_archive.stat.isreg
+        fail_msg: Build and save the image first. See ansible/README.md.
+
+  roles:
+    - docker
+    - security
+    - application

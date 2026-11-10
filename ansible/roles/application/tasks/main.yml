@@ -1,0 +1,75 @@
+- name: Create the application folder
+  ansible.builtin.file:
+    path: /opt/sokopulse
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Copy the image archive
+  ansible.builtin.copy:
+    src: "{{ app_archive }}"
+    dest: /opt/sokopulse/image.tar
+    owner: root
+    group: root
+    mode: "0600"
+  register: image_archive
+
+- name: Check whether the image is loaded
+  community.docker.docker_image_info:
+    name: "{{ app_image }}"
+  register: existing_image
+
+- name: Load the image
+  community.docker.docker_image_load:
+    path: /opt/sokopulse/image.tar
+  when: image_archive.changed or existing_image.images | length == 0
+
+- name: Deploy and check the application
+  block:
+    - name: Start SokoPulse
+      community.docker.docker_container:
+        name: sokopulse
+        image: "{{ app_image }}"
+        pull: never
+        state: started
+        restart_policy: unless-stopped
+        published_ports:
+          - "80:3000"
+        env:
+          NODE_ENV: production
+          PORT: "3000"
+        read_only: true
+        cap_drop:
+          - ALL
+        security_opts:
+          - no-new-privileges:true
+        log_driver: json-file
+        log_options:
+          max-size: 10m
+          max-file: "3"
+
+    - name: Wait for the health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1/api/health
+        return_content: true
+        status_code: 200
+      register: health
+      until: health.status == 200 and health.json.status == 'ok'
+      retries: 12
+      delay: 5
+
+  rescue:
+    - name: Read the container logs
+      ansible.builtin.command: docker logs --tail 50 sokopulse
+      register: container_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Stop with the deployment error
+      ansible.builtin.fail:
+        msg: |
+          Deployment failed: {{ ansible_failed_result.msg | default(ansible_failed_result) }}
+          docker logs exit code: {{ container_logs.rc }}
+          {{ container_logs.stdout }}
+          {{ container_logs.stderr }}

@@ -1,10 +1,10 @@
-# Everything lives in one resource group, so it can be removed with one destroy.
+# resource group for everything
 resource "azurerm_resource_group" "main" {
   name     = "${var.project_name}-rg"
   location = var.location
 }
 
-# ---- Network ----
+# network
 resource "azurerm_virtual_network" "main" {
   name                = "${var.project_name}-vnet"
   address_space       = ["10.0.0.0/16"]
@@ -19,16 +19,15 @@ resource "azurerm_subnet" "main" {
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# ---- Network security: what is allowed to reach the VM ----
+# firewall
 resource "azurerm_network_security_group" "main" {
   name                = "${var.project_name}-nsg"
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
 }
 
-# Public web access is intentional: the demo site must be reachable by anyone.
-# Trivy flags this as AZU-0047. The exception below covers only this rule and
-# expires on 2026-11-30 (reasoning is recorded in SECURITY.md).
+# http is open to everyone on purpose so the demo works
+# trivy flags it (AZU-0047), ignoring only this rule until 2026-11-30
 # trivy:ignore:AZU-0047:exp:2026-11-30
 resource "azurerm_network_security_rule" "allow_http" {
   name                        = "allow-http"
@@ -44,7 +43,7 @@ resource "azurerm_network_security_rule" "allow_http" {
   network_security_group_name = azurerm_network_security_group.main.name
 }
 
-# SSH is only allowed from the administrator's address.
+# ssh only from the admin ip
 resource "azurerm_network_security_rule" "allow_ssh_from_admin" {
   name                        = "allow-ssh-from-admin"
   priority                    = 110
@@ -64,7 +63,7 @@ resource "azurerm_subnet_network_security_group_association" "main" {
   network_security_group_id = azurerm_network_security_group.main.id
 }
 
-# ---- Virtual machine ----
+# vm
 resource "azurerm_public_ip" "main" {
   name                = "${var.project_name}-public-ip"
   location            = azurerm_resource_group.main.location
@@ -94,7 +93,7 @@ resource "azurerm_linux_virtual_machine" "main" {
   admin_username        = var.admin_username
   network_interface_ids = [azurerm_network_interface.main.id]
 
-  # Key-only login: no password is ever created.
+  # no password, ssh key only
   disable_password_authentication = true
 
   admin_ssh_key {

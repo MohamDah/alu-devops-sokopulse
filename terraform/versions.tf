@@ -9,7 +9,7 @@ terraform {
   }
 }
 
-# Credentials come from your local Azure CLI login (az login), never from this file.
+# uses your az login, no credentials in here
 provider "azurerm" {
   features {}
 }

@@ -24,6 +24,11 @@ COPY package.json ./
 COPY src ./src
 COPY public ./public
 
+# patch the OS packages (openssl, musl, zlib had HIGH CVEs)
+# the app only needs node, so npm is removed too (its bundled packages had HIGH/CRITICAL CVEs)
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 # Run as the unprivileged "node" user that ships with the base image.
 USER node
 

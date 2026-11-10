@@ -1,0 +1,13 @@
+# copy to terraform.tfvars and edit it (that file is git-ignored)
+# CI scans this example too, so these are fake values and won't deploy anything
+
+project_name   = "sokopulse"
+location       = "southafricanorth"
+vm_size        = "Standard_B2ats_v2"
+admin_username = "azureuser"
+
+# paste your PUBLIC key
+admin_ssh_public_key = "ssh-ed25519 AAAA..."
+
+# your ip with /32 (see the README)
+admin_source_cidr = "203.0.113.10/32"

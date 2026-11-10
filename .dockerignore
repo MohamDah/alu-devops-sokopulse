@@ -19,3 +19,7 @@ eslint.config.js
 Dockerfile
 docker-compose.yml
 .dockerignore
+
+# Infrastructure code (and any local Terraform state or variables) is not part of the image
+terraform
+ansible

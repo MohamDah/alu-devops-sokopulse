@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Scan npm dependencies
+        run: npm audit --audit-level=high
+
       - name: Lint
         run: npm run lint
 
@@ -32,3 +35,27 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t sokopulse:ci .
+
+      # fails on HIGH or CRITICAL findings that have a fix available
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: sokopulse:ci
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # runs even if an earlier step failed, so it always gets checked
+      - name: Scan Terraform
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.2
+          scan-type: config
+          scan-ref: terraform
+          tf-vars: terraform/terraform.tfvars.example
+          severity: HIGH,CRITICAL
+          exit-code: "1"

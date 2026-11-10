@@ -1,0 +1,65 @@
+- name: Check the deployed server
+  hosts: sokopulse
+  become: true
+  tasks:
+    - name: Read the container settings
+      community.docker.docker_container_info:
+        name: sokopulse
+      register: app
+
+    - name: Check container hardening
+      ansible.builtin.assert:
+        that:
+          - app.exists
+          - app.container.State.Running
+          - app.container.Config.User == 'node'
+          - app.container.HostConfig.ReadonlyRootfs
+          - "'ALL' in app.container.HostConfig.CapDrop"
+          - "'no-new-privileges:true' in app.container.HostConfig.SecurityOpt"
+          - app.container.HostConfig.RestartPolicy.Name == 'unless-stopped'
+
+    - name: Read the active SSH settings
+      ansible.builtin.command: /usr/sbin/sshd -T
+      register: ssh_settings
+      changed_when: false
+
+    - name: Check key-only SSH
+      ansible.builtin.assert:
+        that:
+          - "'permitrootlogin no' in ssh_settings.stdout_lines"
+          - "'passwordauthentication no' in ssh_settings.stdout_lines"
+          - "'kbdinteractiveauthentication no' in ssh_settings.stdout_lines"
+          - "'pubkeyauthentication yes' in ssh_settings.stdout_lines"
+          - "'x11forwarding no' in ssh_settings.stdout_lines"
+
+    - name: Read the firewall settings
+      ansible.builtin.command: ufw status verbose
+      register: firewall
+      changed_when: false
+
+    - name: Check the firewall is enabled
+      ansible.builtin.assert:
+        that:
+          - "'Status: active' in firewall.stdout"
+          - "'deny (incoming), allow (outgoing)' in firewall.stdout"
+
+    - name: Check the API through the public address
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}/api/health"
+        return_content: true
+        status_code: 200
+      delegate_to: localhost
+      become: false
+      register: public_health
+
+    - name: Check the health response
+      ansible.builtin.assert:
+        that:
+          - public_health.json.status == 'ok'
+
+    - name: Check the price endpoint from the laptop
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}/api/prices"
+        status_code: 200
+      delegate_to: localhost
+      become: false

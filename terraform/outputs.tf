@@ -47,3 +47,20 @@ output "vm_id" {
   description = "Resource ID of the virtual machine."
   value       = azurerm_linux_virtual_machine.main.id
 }
+
+output "ansible_inventory" {
+  description = "Inventory for Ansible, using this VM and the same SSH restriction."
+  value = {
+    _meta = {
+      hostvars = {}
+    }
+    sokopulse = {
+      hosts = [azurerm_public_ip.main.ip_address]
+      vars = {
+        ansible_user               = var.admin_username
+        ansible_python_interpreter = "/usr/bin/python3"
+        admin_source_cidr          = var.admin_source_cidr
+      }
+    }
+  }
+}

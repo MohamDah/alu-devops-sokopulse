@@ -90,6 +90,7 @@ terraform output -raw public_ip_address
 | `virtual_network_id`, `subnet_id` | The network |
 | `network_security_group_id` | The firewall rules |
 | `public_ip_id`, `vm_id` | The public IP and the VM |
+| `ansible_inventory` | Current VM address and connection settings for Ansible |
 
 Next, go to `ansible/` to configure the server.
 
@@ -118,3 +119,9 @@ terraform destroy
 - HTTP on port 80 is open to everyone on purpose, so the demo can be reached. It is not encrypted, so only use synthetic data.
 - The security scanner reports this rule as AZU-0047. The exception is placed on that single rule in `main.tf`, expires on 2026-11-30, and is explained in `SECURITY.md`.
 - SSH is limited to one address, password login is disabled, and the VM only accepts your key.
+
+## Ansible
+
+After applying, use [the Ansible guide](../ansible/README.md) to deploy the
+application. The `ansible_inventory` output supplies the current VM address,
+SSH username and admin CIDR to `ansible/inventory.sh`.

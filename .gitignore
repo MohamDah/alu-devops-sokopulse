@@ -47,3 +47,8 @@ crash.log
 !*.tfvars.example
 .terraformrc
 terraform.rc
+
+# --- Local deployment files ---
+ansible/inventory.local.yml
+*.tar
+*.tfplan

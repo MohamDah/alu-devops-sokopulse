@@ -1,0 +1,59 @@
+- name: Install the firewall
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+# add ssh before turning on the firewall
+- name: Allow SSH from the admin network
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    from_ip: "{{ admin_source_cidr }}"
+
+- name: Allow the demo website
+  community.general.ufw:
+    rule: allow
+    port: "80"
+    proto: tcp
+
+- name: Deny other incoming connections
+  community.general.ufw:
+    direction: incoming
+    default: deny
+
+- name: Allow outgoing connections
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+
+- name: Enable the firewall
+  community.general.ufw:
+    state: enabled
+
+# sshd uses the first value, so this goes before cloud-init's file
+- name: Use SSH keys only
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/00-sokopulse.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PubkeyAuthentication yes
+      X11Forwarding no
+      MaxAuthTries 3
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload SSH
+
+- name: Apply SSH changes before deploying
+  ansible.builtin.meta: flush_handlers
+
+- name: Open a fresh SSH connection
+  ansible.builtin.meta: reset_connection
+
+- name: Make sure SSH still works
+  ansible.builtin.wait_for_connection:
+    timeout: 60

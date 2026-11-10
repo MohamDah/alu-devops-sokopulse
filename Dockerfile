@@ -19,10 +19,10 @@ ENV NODE_ENV=production \
 
 # Bring in the installed dependencies, then only the files the app needs.
 # Tests, docs and dev config are left out (see .dockerignore).
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-COPY src ./src
-COPY public ./public
+COPY --from=deps --chown=node:node /app/node_modules ./node_modules
+COPY --chown=node:node package.json ./
+COPY --chown=node:node src ./src
+COPY --chown=node:node public ./public
 
 # patch the OS packages (openssl, musl, zlib had HIGH CVEs)
 # the app only needs node, so npm is removed too (its bundled packages had HIGH/CRITICAL CVEs)

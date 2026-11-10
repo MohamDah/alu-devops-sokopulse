@@ -1,0 +1,18 @@
+- name: Install Docker and Python dependencies
+  ansible.builtin.apt:
+    name:
+      - docker.io
+      - python3-requests
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  register: packages
+  retries: 3
+  delay: 10
+  until: packages is succeeded
+
+- name: Start Docker at boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true

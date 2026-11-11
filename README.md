@@ -309,6 +309,9 @@ Limits of this demo: it uses plain HTTP, with no authentication, rate limiting o
 
 The initial codebase and documentation were produced with substantial help from an AI coding assistant (an AI assistant using Copilot SDK in VS Code). Generated code can contain mistakes, so every contributor is expected to read, test and be able to explain what they submit, and to follow the course's AI-use policy. AI assistance is not a substitute for teammate code review.
 
+See the [AI usage annex](AI_USAGE_ANNEX.md) for prompt summaries,
+output descriptions and how the assistance was used or modified.
+
 ## Links
 
 - [Project Board](https://github.com/users/MohamDah/projects/5/views/1)

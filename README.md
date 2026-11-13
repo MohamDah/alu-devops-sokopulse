@@ -27,9 +27,9 @@ SokoPulse is a learning project that simulates this chain: compare prices, check
 
 SokoPulse is a small Node.js web application with three independent services: a commodity price tracker, a USSD menu simulator and a mobile money payment simulator. A single-page dashboard lets you try all three in a browser. Everything runs from seeded in-memory data, so there is no database to install and no account to create.
 
-The application is deliberately simple. The focus of the course project is the DevOps practice around it: protected branches, code review, automated tests and, in later formatives, CI, containers and infrastructure as code. Each service lives in its own folder under `src/services/` with its own routes, logic and data, so it can later be split into a separate container (LO7 microservices readiness).
+The application is deliberately simple. The focus of the course project is the DevOps practice around it: protected branches, code review, automated tests, CI, containers and infrastructure as code. Each service lives in its own folder under `src/services/` with its own routes, logic and data, so it can later be split into a separate container (LO7 microservices readiness).
 
-This formative covers the project foundation and secure collaboration: a secured repository, a working three-service app with tests, a dashboard and documentation.
+Formative 1 set up the app and team workflow. Formative 2 added Docker and CI. For Formative 3, Terraform creates an Azure VM, Ansible configures and deploys the app, and CI checks dependencies, the container image and Terraform for security findings.
 
 ### Target Users
 
@@ -51,7 +51,7 @@ This formative covers the project foundation and secure collaboration: a secured
 | Backend | Node.js 20+, Express 5, JavaScript (CommonJS), Helmet, dotenv |
 | Frontend | Plain HTML, CSS and JavaScript (no framework, no build step) |
 | Database / data layer | Seeded JavaScript data and in-memory arrays. No external database; state resets on restart |
-| Testing & DevOps | Jest, Supertest, ESLint, GitHub Actions, Docker, Docker Compose, Git and GitHub (branch protection, CODEOWNERS, PR template) |
+| Testing & DevOps | Jest, Supertest, ESLint, GitHub Actions, Docker, Docker Compose, npm audit, Trivy, Terraform, Ansible, Azure and GitHub (branch protection, CODEOWNERS, PR template) |
 
 ## Getting Started
 
@@ -136,37 +136,100 @@ How it is set up:
 - **Data:** the app has no database, so there is no volume. Transactions are kept in memory and reset when the container restarts.
 - **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
 
+## Azure Deployment (Formative 3)
+
+The app is still one container. We did not add microservices or a Kubernetes
+cluster for this assignment.
+
+```text
+Terraform -> Azure network, security rules and Ubuntu VM
+Ansible   -> Docker, SSH hardening, firewall and app container
+Browser   -> VM public IP on port 80 -> container port 3000
+```
+
+1. Follow [the Terraform guide](terraform/README.md) to sign in to Azure,
+   set your own variables, review the plan and create the infrastructure.
+   SSH is restricted to your admin CIDR; HTTP is open for the demo.
+2. Follow [the Ansible guide](ansible/README.md) to install the collections,
+   build an amd64 image and save it locally. Its dynamic inventory reads the
+   VM address and connection settings from Terraform.
+3. Run the deployment playbook, then run it again to check idempotence.
+   Run the verification playbook to check SSH settings, UFW, the container
+   and public API access.
+
+These are the main commands, after the setup steps in those guides:
+
+```bash
+terraform -chdir=terraform init
+terraform -chdir=terraform plan -out=deploy.tfplan
+terraform -chdir=terraform apply deploy.tfplan
+ansible-galaxy collection install -r ansible/requirements.yml
+docker build --platform linux/amd64 -t sokopulse:f3 .
+docker save -o sokopulse-image.tar sokopulse:f3
+ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
+ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
+ansible-playbook -i ansible/inventory.sh ansible/verify.yml
+terraform -chdir=terraform output -raw app_url
+```
+
+Use your SSH key as explained in the Ansible guide. Terraform state, private
+keys, real variable files and image archives stay off Git. Deployment is
+manual; GitHub Actions does not log in to Azure or deploy on merge.
+
+Our [Ansible PR](https://github.com/MohamDah/alu-devops-sokopulse/pull/28)
+records a successful fresh Azure deployment. The first playbook run reported
+`changed=10`, the second `changed=0`, and verification passed with no failures.
+That is evidence of that run, not a guarantee that a VM is still online.
+
+**Costs:** the VM, disk and public IP can keep costing money after testing.
+When the team is done, review and run `terraform -chdir=terraform destroy`.
+This deletes the infrastructure and its data, so agree with the team first.
+
+This deployment is a short-lived HTTP demo, not a production service. Use
+synthetic data only. Read [the security findings and accepted risks](SECURITY.md)
+before exposing it.
+
 ## Continuous Integration
 
 A GitHub Actions workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) checks every change automatically.
 
 **When it runs:** on pushes to any branch except `main`, and on pull requests into `main`.
 
-**What it does** (one job named `ci`, each step stops the run if it fails):
+**What it does** (one job named `ci`):
 
 1. Check out the code
 2. Set up Node.js 20 (with the npm cache)
 3. Install dependencies with `npm ci`
-4. Lint with ESLint (`npm run lint`)
-5. Run the Jest tests (`npm test`)
-6. Build the Docker image
+4. Scan dependencies (`npm audit --audit-level=high`)
+5. Lint with ESLint (`npm run lint`)
+6. Run the Jest tests (`npm test`)
+7. Build the Docker image
+8. Scan the image with Trivy (fixable HIGH and CRITICAL vulnerabilities fail)
+9. Scan Terraform with Trivy (HIGH and CRITICAL misconfigurations fail)
+
+The image scan waits for the build and earlier checks to pass. The Terraform
+scan still runs after an earlier failure, unless the workflow is cancelled.
+All three scan types are configured on every PR into `main`.
+See [SECURITY.md](SECURITY.md) for the findings, thresholds and HTTP exception.
 
 **Run the same checks locally** before you push:
 
 ```bash
+npm ci
+npm audit --audit-level=high
 npm run lint
 npm test
 docker build -t sokopulse:ci .
 ```
 
-**Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests and the Docker build. The CI badge at the top shows the result of the latest run.
+**Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests, Docker build and image scan. The Terraform scan still runs. The CI badge at the top links to the workflow; check the PR's own results before merging.
 
 ## Project Structure
 
 ```text
 alu-devops-sokopulse/
 ├── .github/
-│   ├── workflows/ci.yml        # CI: lint, test, Docker build
+│   ├── workflows/ci.yml        # lint, tests, build and security scans
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── public/                     # dashboard (HTML, CSS, JS)
@@ -180,11 +243,21 @@ alu-devops-sokopulse/
 │   ├── app.js                  # builds the Express app and wires the services
 │   └── server.js               # starts the server
 ├── tests/                      # Jest unit tests per service + API integration tests
+├── terraform/                  # Azure resources, variables, outputs and runbook
+├── ansible/
+│   ├── inventory.sh            # reads Terraform outputs
+│   ├── inventory.example.yml   # optional static inventory template
+│   ├── playbook.yml
+│   ├── verify.yml              # deployed server checks
+│   ├── requirements.yml
+│   ├── roles/                  # docker, security, application
+│   └── README.md
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
 ├── Dockerfile
 ├── LICENSE
+├── SECURITY.md
 ├── docker-compose.yml
 ├── eslint.config.js
 ├── package.json
@@ -221,7 +294,7 @@ Each service folder holds its own routes and its own logic, and keeps its own da
 | Require pull request | On | Every change is proposed, discussed and recorded; nobody pushes straight to `main`. |
 | 1 approval | At least 1 approving review | A second person sees every change, which shares knowledge and catches mistakes. |
 | Dismiss stale approvals | On | If new commits are pushed, the earlier approval no longer counts; reviewers approve what actually merges. |
-| Status checks | On (strict). The `ci` check (lint, tests, Docker build) is required | A change cannot merge unless the automated checks pass, so verification does not depend on one person's local run. |
+| Status checks | On (strict). The `ci` check (lint, tests, Docker build and security scans) is required | A change cannot merge unless the automated checks pass, so verification does not depend on one person's local run. |
 | Up-to-date branches | On | A branch must include the latest `main` before merging, so it is tested against current code. |
 | Conversation resolution | On | Review comments must be resolved, not ignored. |
 | Include administrators | On | The owner follows the same rules as everyone else. Force pushes and branch deletion are also blocked. |
@@ -230,16 +303,22 @@ Supporting files: [`.github/CODEOWNERS`](.github/CODEOWNERS) lists reviewers for
 
 Workflow: branch from `main`, make small [Conventional Commits](https://www.conventionalcommits.org/), open a PR that links its issue, get a review, then merge.
 
-Limits of this demo: it runs over plain local HTTP with no authentication, no rate limiting and no persistent storage, so do not expose it publicly or enter real phone numbers. The dependency audit currently reports advisories only in Jest's development dependencies; there are none in production dependencies (`npm audit --omit=dev`).
+Limits of this demo: it uses plain HTTP, with no authentication, rate limiting or persistent storage. The Azure demo intentionally allows public HTTP for assessment, but must only use synthetic data and stay short-lived. Do not enter real phone numbers or payment details. The current dependency findings are in development tooling; production dependencies reported none on 10 November 2026. Node.js 20 is end-of-life and needs a tested upgrade before any production use. See [SECURITY.md](SECURITY.md) for the details and review dates.
 
 ### AI usage disclosure
 
 The initial codebase and documentation were produced with substantial help from an AI coding assistant (an AI assistant using Copilot SDK in VS Code). Generated code can contain mistakes, so every contributor is expected to read, test and be able to explain what they submit, and to follow the course's AI-use policy. AI assistance is not a substitute for teammate code review.
 
+See the [AI usage annex](AI_USAGE_ANNEX.md) for prompt summaries,
+output descriptions and how the assistance was used or modified.
+
 ## Links
 
 - [Project Board](https://github.com/users/MohamDah/projects/5/views/1)
 - [Documentation](./README.md)
+- [Terraform setup](terraform/README.md)
+- [Ansible deployment](ansible/README.md)
+- [Security findings](SECURITY.md)
 
 ## License
 

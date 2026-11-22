@@ -10,6 +10,8 @@ services:
       # The app always listens on 3000 inside the container
       PORT: 3000
       NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_SSL: ${DB_SSL:-true}
     # Restart after a crash, unless it was stopped on purpose
     restart: unless-stopped
     healthcheck:
@@ -21,7 +23,7 @@ services:
     networks:
       - soko-net
 
-# The app needs no database, so there is nothing to persist and no volume.
-# Add a volume here when a database service is added.
+# No database container is included. Configure DATABASE_URL for an external
+# PostgreSQL instance, or leave it empty to use in-memory transactions.
 networks:
   soko-net:

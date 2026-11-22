@@ -7,8 +7,13 @@ const app = createApp();
 describe('app basics', () => {
   test('health check responds ok', async () => {
     const res = await request(app).get('/api/health').expect(200);
-    expect(res.body).toEqual({ status: 'ok' });
+    expect(res.body).toEqual({ status: 'ok', database: 'memory' });
     expect(res.headers['x-powered-by']).toBeUndefined();
+  });
+
+  test('readiness check reports the selected database', async () => {
+    const res = await request(app).get('/api/ready').expect(200);
+    expect(res.body).toEqual({ status: 'ready', database: 'memory' });
   });
 
   test('unknown routes return 404 JSON', async () => {

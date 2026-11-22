@@ -25,7 +25,7 @@ SokoPulse is a learning project that simulates this chain: compare prices, check
 
 ## Project Overview
 
-SokoPulse is a small Node.js web application with three independent services: a commodity price tracker, a USSD menu simulator and a mobile money payment simulator. A single-page dashboard lets you try all three in a browser. Everything runs from seeded in-memory data, so there is no database to install and no account to create.
+SokoPulse is a small Node.js web application with three independent services: a commodity price tracker, a USSD menu simulator and a mobile money payment simulator. A single-page dashboard lets you try all three in a browser. Market prices use seeded in-memory data. MoMo transactions use in-memory storage by default, or PostgreSQL when `DATABASE_URL` is configured.
 
 The application is deliberately simple. The focus of the course project is the DevOps practice around it: protected branches, code review, automated tests, CI, containers and infrastructure as code. Each service lives in its own folder under `src/services/` with its own routes, logic and data, so it can later be split into a separate container (LO7 microservices readiness).
 
@@ -50,7 +50,7 @@ Formative 1 set up the app and team workflow. Formative 2 added Docker and CI. F
 | --- | --- |
 | Backend | Node.js 20+, Express 5, JavaScript (CommonJS), Helmet, dotenv |
 | Frontend | Plain HTML, CSS and JavaScript (no framework, no build step) |
-| Database / data layer | Seeded JavaScript data and in-memory arrays. No external database; state resets on restart |
+| Database / data layer | Seeded in-memory market data; MoMo transactions in memory by default or PostgreSQL with `DATABASE_URL` |
 | Testing & DevOps | Jest, Supertest, ESLint, GitHub Actions, Docker, Docker Compose, npm audit, Trivy, Terraform, Ansible, Azure and GitHub (branch protection, CODEOWNERS, PR template) |
 
 ## Getting Started
@@ -73,7 +73,7 @@ npm test
 npm start
 ```
 
-Open http://localhost:3000 for the dashboard. The `.env` file only sets `PORT` (default `3000`); the app also runs without it. Use `npm run test:coverage` for a coverage report.
+Open http://localhost:3000 for the dashboard. With the example `.env`, the app uses in-memory transaction storage and data resets on restart. To persist MoMo transactions, set `DATABASE_URL` to a PostgreSQL connection string; the app creates its transaction table at startup. `DB_SSL` defaults to `true`; set it to `false` only for a local PostgreSQL instance that does not use TLS. Use `npm run test:coverage` for a coverage report.
 
 ### Usage
 
@@ -109,6 +109,8 @@ curl -X POST http://localhost:3000/api/momo/pay -H "Content-Type: application/js
 curl "http://localhost:3000/api/momo/transactions"
 ```
 
+When PostgreSQL is configured, this transaction list is retained across application restarts. Without `DATABASE_URL`, it is kept in memory and resets on restart.
+
 Set `"scenario"` to `insufficient_funds` or `pin_timeout` for a deterministic failed payment (still returned as HTTP 201 with `"status":"FAILED"`). Invalid input returns HTTP 400. Fee tiers (simulated, deducted from the farmer): up to 5,000 RWF = 50; up to 50,000 = 300; up to 500,000 = 1,500; above = 5,000.
 
 ### Run with Docker Compose
@@ -133,7 +135,7 @@ How it is set up:
 - **`Dockerfile`:** two stages on `node:20-alpine`. The first installs production dependencies, the second is a small runtime image. It runs as the non-root `node` user and has a health check on `/api/health`.
 - **`docker-compose.yml`:** one `app` service built from the Dockerfile, with a restart policy, a health check and a named network.
 - **Port:** the app always listens on 3000 inside the container. To use another port on your machine, set `PORT` in `.env` (for example `PORT=8080`) and open http://localhost:8080.
-- **Data:** the app has no database, so there is no volume. Transactions are kept in memory and reset when the container restarts.
+- **Data:** no database container is included. The app uses in-memory transactions unless a PostgreSQL `DATABASE_URL` is supplied through `.env`; an external database keeps transactions across container restarts.
 - **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
 
 ## Azure Deployment (Formative 3)

@@ -64,11 +64,13 @@ output "ansible_inventory" {
     sokopulse = {
       hosts = ["app"]
       vars = {
-        app_url      = "http://${azurerm_public_ip.load_balancer.ip_address}"
-        jumpbox_cidr = module.network.jumpbox_subnet_cidr
-        db_host      = module.database.host
-        db_name      = module.database.database_name
-        db_user      = module.database.admin_username
+        app_url          = "http://${azurerm_public_ip.load_balancer.ip_address}"
+        jumpbox_cidr     = module.network.jumpbox_subnet_cidr
+        db_host          = module.database.host
+        db_name          = module.database.database_name
+        db_user          = module.database.admin_username
+        acr_name         = var.container_registry_name
+        acr_login_server = azurerm_container_registry.main.login_server
       }
     }
   }

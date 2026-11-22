@@ -23,8 +23,9 @@ Admin laptop --Ansible/image archive via SSH ProxyJump--> private app VM
 The VNet has separate jumpbox and app subnets. The app VM has no public IP. The
 load balancer also provides its outbound access for package and image
 downloads. ACR has admin credentials disabled; its public endpoint requires
-authenticated access. The current Ansible deployment transfers the locally
-built app image through SSH; ACR is reserved for a later CI/CD workflow.
+authenticated access. Manual Ansible deployment defaults to a local image
+archive; it can also pull SHA-tagged images from ACR using the app VM's
+managed identity. The merge-to-main CD workflow is still pending.
 
 The managed database is Azure Database for PostgreSQL Flexible Server
 (Burstable B1ms, PostgreSQL 16, 7-day backups) in Spain Central. South Africa

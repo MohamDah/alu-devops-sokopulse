@@ -138,58 +138,33 @@ How it is set up:
 - **Data:** no database container is included. The app uses in-memory transactions unless a PostgreSQL `DATABASE_URL` is supplied through `.env`; an external database keeps transactions across container restarts.
 - **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
 
-## Azure Deployment (Formative 3)
+## Azure Infrastructure
 
-The app is still one container. We did not add microservices or a Kubernetes
-cluster for this assignment.
+### Summative Terraform (in progress)
 
-```text
-Terraform -> Azure network, security rules and Ubuntu VM
-Ansible   -> Docker, SSH hardening, firewall and app container
-Browser   -> VM public IP on port 80 -> container port 3000
-```
+The current Terraform root describes a clean Azure stack: a public jumpbox
+restricted to the admin CIDR, a private app VM behind a Standard Load Balancer,
+private PostgreSQL, and an authenticated Azure Container Registry. See the
+[Terraform guide](terraform/README.md) for the architecture and inputs.
 
-1. Follow [the Terraform guide](terraform/README.md) to sign in to Azure,
-   set your own variables, review the plan and create the infrastructure.
-   SSH is restricted to your admin CIDR; HTTP is open for the demo.
-2. Follow [the Ansible guide](ansible/README.md) to install the collections,
-   build an amd64 image and save it locally. Its dynamic inventory reads the
-   VM address and connection settings from Terraform.
-3. Run the deployment playbook, then run it again to check idempotence.
-   Run the verification playbook to check SSH settings, UFW, the container
-   and public API access.
+The Formative 3 resources are still tracked in local Terraform state and may
+still exist in Azure. The Summative configuration will propose their removal
+alongside the new resources. Do not apply until the complete plan and cost
+estimate have been reviewed. The new configuration has not been applied.
+Ansible and the deployment workflow still need to be updated for this topology.
 
-These are the main commands, after the setup steps in those guides:
+### Formative 3 deployment (historical)
 
-```bash
-terraform -chdir=terraform init
-terraform -chdir=terraform plan -out=deploy.tfplan
-terraform -chdir=terraform apply deploy.tfplan
-ansible-galaxy collection install -r ansible/requirements.yml
-docker build --platform linux/amd64 -t sokopulse:f3 .
-docker save -o sokopulse-image.tar sokopulse:f3
-ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-ansible-playbook -i ansible/inventory.sh ansible/verify.yml
-terraform -chdir=terraform output -raw app_url
-```
+Formative 3 used one public Ubuntu VM, with Ansible deploying the app container
+to port 3000. Our [Ansible PR](https://github.com/MohamDah/alu-devops-sokopulse/pull/28)
+records a successful deployment: the first playbook run reported `changed=10`,
+the second `changed=0`, and verification passed. That is evidence of that run,
+not a guarantee that the VM is still online.
 
-Use your SSH key as explained in the Ansible guide. Terraform state, private
-keys, real variable files and image archives stay off Git. Deployment is
-manual; GitHub Actions does not log in to Azure or deploy on merge.
-
-Our [Ansible PR](https://github.com/MohamDah/alu-devops-sokopulse/pull/28)
-records a successful fresh Azure deployment. The first playbook run reported
-`changed=10`, the second `changed=0`, and verification passed with no failures.
-That is evidence of that run, not a guarantee that a VM is still online.
-
-**Costs:** the VM, disk and public IP can keep costing money after testing.
-When the team is done, review and run `terraform -chdir=terraform destroy`.
-This deletes the infrastructure and its data, so agree with the team first.
-
-This deployment is a short-lived HTTP demo, not a production service. Use
-synthetic data only. Read [the security findings and accepted risks](SECURITY.md)
-before exposing it.
+Terraform state, private keys, real variable files and image archives stay off
+Git. The original deployment was a short-lived HTTP demo, not a production
+service; use synthetic data only. Read [the security findings and accepted
+risks](SECURITY.md) before exposing it.
 
 ## Continuous Integration
 

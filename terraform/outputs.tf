@@ -1,66 +1,59 @@
-output "public_ip_address" {
-  description = "Public IP address of the VM."
-  value       = azurerm_public_ip.main.ip_address
-}
-
-output "app_url" {
-  description = "Address of the application once it is deployed (plain HTTP)."
-  value       = "http://${azurerm_public_ip.main.ip_address}"
-}
-
-output "ssh_command" {
-  description = "Command to connect to the VM over SSH."
-  value       = "ssh ${var.admin_username}@${azurerm_public_ip.main.ip_address}"
-}
-
 output "resource_group_name" {
-  description = "Name of the resource group that holds everything."
+  description = "Name of the resource group that holds the Summative resources."
   value       = azurerm_resource_group.main.name
 }
 
-output "resource_group_id" {
-  description = "Resource ID of the resource group."
-  value       = azurerm_resource_group.main.id
+output "app_url" {
+  description = "Public HTTP address of the application load balancer."
+  value       = "http://${azurerm_public_ip.load_balancer.ip_address}"
 }
 
-output "virtual_network_id" {
-  description = "Resource ID of the virtual network."
-  value       = azurerm_virtual_network.main.id
+output "jumpbox_ssh_command" {
+  description = "Command to connect to the jumpbox over SSH."
+  value       = "ssh ${var.admin_username}@${azurerm_public_ip.jumpbox.ip_address}"
 }
 
-output "subnet_id" {
-  description = "Resource ID of the subnet."
-  value       = azurerm_subnet.main.id
+output "app_vm_id" {
+  description = "Resource ID of the private application virtual machine."
+  value       = azurerm_linux_virtual_machine.app.id
 }
 
-output "network_security_group_id" {
-  description = "Resource ID of the network security group."
-  value       = azurerm_network_security_group.main.id
+output "jumpbox_vm_id" {
+  description = "Resource ID of the public jumpbox virtual machine."
+  value       = azurerm_linux_virtual_machine.jumpbox.id
 }
 
-output "public_ip_id" {
-  description = "Resource ID of the public IP address."
-  value       = azurerm_public_ip.main.id
+output "summative_vnet_id" {
+  description = "Resource ID of the isolated Summative virtual network."
+  value       = module.network.vnet_id
 }
 
-output "vm_id" {
-  description = "Resource ID of the virtual machine."
-  value       = azurerm_linux_virtual_machine.main.id
+output "summative_jumpbox_subnet_id" {
+  description = "Resource ID of the subnet for the Summative jumpbox."
+  value       = module.network.jumpbox_subnet_id
 }
 
-output "ansible_inventory" {
-  description = "Inventory for Ansible, using this VM and the same SSH restriction."
-  value = {
-    _meta = {
-      hostvars = {}
-    }
-    sokopulse = {
-      hosts = [azurerm_public_ip.main.ip_address]
-      vars = {
-        ansible_user               = var.admin_username
-        ansible_python_interpreter = "/usr/bin/python3"
-        admin_source_cidr          = var.admin_source_cidr
-      }
-    }
-  }
+output "summative_app_subnet_id" {
+  description = "Resource ID of the private Summative app subnet."
+  value       = module.network.app_subnet_id
+}
+
+output "summative_database_subnet_id" {
+  description = "Resource ID of the delegated PostgreSQL subnet."
+  value       = module.network.database_subnet_id
+}
+
+output "summative_database_host" {
+  description = "Private DNS hostname for the Summative PostgreSQL server."
+  value       = module.database.host
+}
+
+output "summative_database_name" {
+  description = "Name of the SokoPulse PostgreSQL database."
+  value       = module.database.database_name
+}
+
+output "container_registry_login_server" {
+  description = "Login server for the authenticated Azure Container Registry."
+  value       = azurerm_container_registry.main.login_server
 }

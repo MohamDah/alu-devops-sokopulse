@@ -6,8 +6,16 @@ location       = "southafricanorth"
 vm_size        = "Standard_B2ats_v2"
 admin_username = "azureuser"
 
-# paste your PUBLIC key
-admin_ssh_public_key = "ssh-ed25519 AAAA..."
+# valid disposable example key; replace with your PUBLIC key before use
+admin_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBC8O+GjvB7IxCbPitCw2rlmsM5UmT+idXiWnzrMIyuh terraform-example"
 
 # your ip with /32 (see the README)
 admin_source_cidr = "203.0.113.10/32"
+
+# globally unique example names; replace before planning
+database_server_name = "sokopulse-postgres-example123"
+container_registry_name = "sokopulseexample123"
+
+# fake placeholder only; replace locally before planning or applying
+database_admin_username = "sokopulseadmin"
+database_admin_password = "Fake-Placeholder-Not-A-Secret-123"

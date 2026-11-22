@@ -41,3 +41,39 @@ variable "admin_source_cidr" {
     error_message = "Use an IPv4 address in CIDR notation such as 203.0.113.10/32. Opening SSH to 0.0.0.0/0 is not allowed."
   }
 }
+
+variable "database_admin_username" {
+  type        = string
+  description = "Administrator login for the Summative PostgreSQL server."
+}
+
+variable "database_admin_password" {
+  type        = string
+  description = "Administrator password for the Summative PostgreSQL server."
+  sensitive   = true
+
+  validation {
+    condition     = length(var.database_admin_password) >= 8
+    error_message = "The PostgreSQL administrator password must contain at least 8 characters."
+  }
+}
+
+variable "database_server_name" {
+  type        = string
+  description = "Globally unique lowercase name for the PostgreSQL Flexible Server."
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.database_server_name))
+    error_message = "Use a 3-63 character PostgreSQL server name with lowercase letters, numbers, and hyphens."
+  }
+}
+
+variable "container_registry_name" {
+  type        = string
+  description = "Globally unique alphanumeric name for the Azure Container Registry."
+
+  validation {
+    condition     = can(regex("^[a-z0-9]{5,50}$", var.container_registry_name))
+    error_message = "The Azure Container Registry name must be 5-50 lowercase alphanumeric characters."
+  }
+}

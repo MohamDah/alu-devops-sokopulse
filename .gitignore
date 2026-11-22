@@ -48,6 +48,11 @@ crash.log
 .terraformrc
 terraform.rc
 
+# Summative local deployment files
+*.tfplan
+ansible/inventory.local.ini
+ssh/
+
 # --- Local deployment files ---
 ansible/inventory.local.yml
 *.tar

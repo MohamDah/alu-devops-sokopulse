@@ -4,17 +4,17 @@
     state: present
 
 # add ssh before turning on the firewall
-- name: Allow SSH from the admin network
+- name: Allow SSH from the jumpbox subnet
   community.general.ufw:
     rule: allow
     port: "22"
     proto: tcp
-    from_ip: "{{ admin_source_cidr }}"
+    from_ip: "{{ jumpbox_cidr }}"
 
-- name: Allow the demo website
+- name: Allow application backend traffic
   community.general.ufw:
     rule: allow
-    port: "80"
+    port: "3000"
     proto: tcp
 
 - name: Deny other incoming connections

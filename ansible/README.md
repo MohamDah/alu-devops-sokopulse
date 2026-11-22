@@ -1,101 +1,129 @@
 # Ansible deployment
 
-This configures the Ubuntu VM from Terraform and runs SokoPulse in Docker.
-There are three roles: `docker` installs Docker, `security` sets up UFW and
-key-only SSH, and `application` loads the image and checks the API.
+Ansible configures the private Ubuntu app VM through the public jumpbox. It
+installs Docker Compose and deploys SokoPulse, which stores MoMo transactions
+in the managed Azure PostgreSQL server created by Terraform. The app reaches
+the database over VNet peering and TLS; the database has no public access.
+Ansible supports a local image archive for manual deployment and a SHA-tagged
+ACR image for the automated deployment workflow.
 
-## Before starting
+## Prerequisites
 
-- Apply Terraform first (see [the Terraform guide](../terraform/README.md)).
-- Install Ansible on your laptop. These playbooks use Ansible core 2.19 or newer.
-- Have Terraform, Docker with Buildx, and your SSH private key available locally.
-- Make sure `admin_source_cidr` in Terraform matches the network your SSH
-  connection actually uses. A VPN can make this different from your browser IP.
+- Apply Terraform first; see the [Terraform guide](../terraform/README.md).
+- Install Ansible Core 2.19 or newer, Terraform, Docker with Buildx, and the
+  collections in `requirements.yml`.
+- Use the SSH private key matching the public key configured in Terraform.
+- Confirm `admin_source_cidr` in Terraform matches the public IP from which
+  you'll connect to the jumpbox.
 
-Run these commands from the repository root:
+From the repository root:
 
 ```bash
 ansible-galaxy collection install -r ansible/requirements.yml
-terraform -chdir=terraform apply
 ansible-inventory -i ansible/inventory.sh --graph
 ```
 
-`inventory.sh` reads the current IP, username and admin CIDR from Terraform's
-`ansible_inventory` output. It does not need Azure credentials or a saved list
-of IPs. Terraform must already have been applied with that output.
-The inventory fails if Terraform cannot supply it.
+The inventory script reads `ansible_inventory` from Terraform. It targets the
+app VM's private address and configures SSH `ProxyJump` through the jumpbox.
+Terraform must have been applied and the jumpbox must be reachable first.
+The inventory includes the managed database host, name and user from the
+applied Terraform configuration.
 
-If you prefer a static inventory, copy `ansible/inventory.example.yml` to
-`ansible/inventory.local.yml`, replace the example values, and use that path
-instead. The local file is ignored by Git.
+On the first SSH connection, connect to the jumpbox and verify its host
+fingerprint before accepting it:
+
+```bash
+terraform -chdir=terraform output -raw jumpbox_ssh_command
+```
+
+Run the printed command and verify the fingerprint through a trusted channel.
+Ansible then connects to the private VM through that jumpbox. Do not disable SSH
+host-key checking. If your key is not loaded in `ssh-agent`, add
+`--private-key ~/.ssh/YOUR_KEY` to the Ansible commands.
 
 ## Build and deploy
 
-Build for the Azure VM's amd64 CPU, even if your laptop uses Apple Silicon:
+Build for the Azure VM's amd64 CPU, including when the laptop uses Apple
+Silicon:
 
 ```bash
-docker build --platform linux/amd64 -t sokopulse:f3 .
-docker save -o sokopulse-image.tar sokopulse:f3
-```
-
-Connect once and check the host fingerprint before accepting it:
-
-```bash
-ssh azureuser@YOUR_VM_IP
-exit
-```
-
-Use the username you set in Terraform if it is not `azureuser`.
-Do not disable SSH host-key checking. If SSH uses a different key from your
-default one, add `--private-key ~/.ssh/YOUR_KEY` to the Ansible commands.
-
-```bash
+docker build --platform linux/amd64 -t sokopulse:summative .
+docker save -o sokopulse-image.tar sokopulse:summative
 ansible-playbook -i ansible/inventory.sh ansible/playbook.yml --syntax-check
 ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-# run it again to check that nothing needs changing
-ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-ansible-playbook -i ansible/inventory.sh ansible/verify.yml
-curl --fail "http://$(terraform -chdir=terraform output -raw public_ip_address)/api/health"
 ```
 
-The second run should report `changed=0` when the image and settings are the
-same. To deploy another version, build and save a new image. You can override
-the defaults with `-e app_image=sokopulse:YOUR_TAG -e app_archive=/path/image.tar`.
-The archive must contain that exact image tag. There is no registry to log in to.
+Ansible prompts for the PostgreSQL admin password and confirmation. Enter the
+`database_admin_password` from your local `terraform.tfvars`. The database
+host, name and user come from the Terraform inventory. The password is not
+stored in the repository, and secret-bearing container tasks are hidden from
+Ansible output. It is written to a root-owned, mode-0600 Compose environment
+file on the VM.
 
-`verify.yml` checks the running container, effective SSH settings, firewall,
-and public API access from your laptop. It only reads settings.
+Azure manages the database, its storage and its backups, so transactions
+persist across app restarts and redeployments. Ansible removes the earlier
+`sokopulse-postgres` container but keeps its `sokopulse-postgres-data` volume.
+
+For an image already pushed to ACR with its full Git commit SHA as the tag,
+deploy in registry mode instead of using the local archive:
+
+```bash
+ansible-playbook -i ansible/inventory.sh ansible/playbook.yml \
+  -e deploy_from_acr=true \
+  -e image_tag="$(git rev-parse HEAD)"
+```
+
+In this mode, the app VM signs in with its system-assigned managed identity,
+which Terraform grants the `AcrPull` role. Ansible pulls the image before
+replacing the running container, then logs out of ACR. The image must already
+exist in the registry. The merge-to-main CD workflow is drafted but not yet
+configured or validated in GitHub Actions; see the root
+[README](../README.md#continuous-deployment-draft) for its prerequisites.
+
+After deployment, verify the host and public endpoints:
+
+```bash
+ansible-playbook -i ansible/inventory.sh ansible/verify.yml
+curl --fail "$(terraform -chdir=terraform output -raw app_url)/api/ready"
+```
+
+The readiness endpoint must report `"status":"ready"` and
+`"database":"postgres"`. Repeating the playbook with the same settings is
+idempotent. Local archive deployments can override `app_image` and
+`app_archive`.
 
 ## What gets configured
 
-- Docker starts at boot and the container uses `unless-stopped`.
-- The app still runs as the non-root `node` user, with a read-only filesystem,
-  no Linux capabilities, and bounded Docker logs.
-- UFW allows HTTP and SSH from the same admin CIDR used by Terraform.
-  SSH access is allowed before UFW is enabled.
+- Docker starts at boot; the app container uses `unless-stopped`.
+- The app container is managed by Docker Compose and uses the health check
+  baked into its image.
+- The app connects to Azure PostgreSQL with TLS certificate verification.
+- The app container runs as the non-root `node` user, with a read-only
+  filesystem, no Linux capabilities, and bounded Docker logs.
+- UFW allows SSH only from the jumpbox subnet and app traffic on port 3000.
+  The VM has no public IP; Azure Load Balancer and NSG provide the public
+  application entry point.
 - SSH password/root login and X11 forwarding are disabled. The config is
-  checked before reload, then Ansible reconnects to check access.
-- The health endpoint is retried after deployment. If it fails, Ansible prints
-  the container logs and fails instead of claiming the deployment worked.
+  checked before reload, then Ansible reconnects through the jumpbox.
+- Ansible checks database-backed readiness after deployment and prints
+  container logs if deployment fails.
 
-Docker-published ports can bypass UFW. The Azure NSG is still needed and only
-allows ports 80 and source-restricted 22 from outside. Do not publish extra
-ports without updating both layers deliberately.
-
-This is a plain HTTP demo with seeded data, not a real payment system.
-In-memory trades are lost when the container is replaced or restarted.
-Do not enter real payment details.
+This is a plain HTTP demo, not a real payment system. Do not enter real payment
+details.
 
 ## Troubleshooting and cleanup
 
-- SSH timeout: check the VM is running, your source CIDR and the NSG.
-  Do not open SSH to the whole internet to fix it.
-- If changing admin networks, update Terraform first. UFW rules from an old
-  CIDR remain until you remove them with `sudo ufw delete allow from OLD_CIDR
-  to any port 22 proto tcp`, after checking a new SSH session works.
-- Missing image: rerun `docker save` and check `app_image` matches its tag.
-- Health failure: check `sudo docker logs sokopulse` and `sudo docker inspect
-  sokopulse`. Fix the error and rerun the playbook.
-- The archive and Terraform state stay local. Do not commit them or private keys.
-- When finished, use `terraform -chdir=terraform destroy` to avoid ongoing costs.
-  This deletes the VM and its data; only do it when the team is done testing.
+- SSH timeout: check the VM is running, your source CIDR and the jumpbox NSG.
+  Do not open SSH to the whole internet.
+- Missing image: rerun `docker save` and check `app_image` matches the archive
+  tag.
+- ACR pull failure: confirm the SHA-tagged image exists, the VM's managed
+  identity has `AcrPull`, and Terraform's role assignment has propagated.
+- Readiness failure: inspect `docker logs sokopulse`. A database timeout
+  usually means the VNet peering or private DNS link is missing; an
+  authentication error means the password differs from `terraform.tfvars`.
+- The image archive and Terraform state stay local. Do not commit them or
+  private keys.
+- After filming the demo, inspect a Terraform destroy plan and destroy the
+  Azure resources to stop ongoing charges. This removes the VMs and the managed
+  database with its data.

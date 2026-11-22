@@ -6,7 +6,24 @@
     group: root
     mode: "0755"
 
-- name: Copy the image archive
+- name: Install the deployment Compose file
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: /opt/sokopulse/compose.yaml
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install the database environment file
+  ansible.builtin.template:
+    src: app.env.j2
+    dest: /opt/sokopulse/.env
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Copy the local image archive
   ansible.builtin.copy:
     src: "{{ app_archive }}"
     dest: /opt/sokopulse/image.tar
@@ -14,53 +31,125 @@
     group: root
     mode: "0600"
   register: image_archive
+  when: not (deploy_from_acr | bool)
 
-- name: Check whether the image is loaded
+- name: Check whether the local image is loaded
   community.docker.docker_image_info:
     name: "{{ app_image }}"
   register: existing_image
+  when: not (deploy_from_acr | bool)
 
-- name: Load the image
+- name: Load the local image
   community.docker.docker_image_load:
     path: /opt/sokopulse/image.tar
-  when: image_archive.changed or existing_image.images | length == 0
+  when:
+    - not (deploy_from_acr | bool)
+    - image_archive.changed or existing_image.images | length == 0
+
+- name: Authenticate and pre-pull the ACR image
+  block:
+    - name: Sign in with the app VM managed identity
+      ansible.builtin.command:
+        argv:
+          - az
+          - login
+          - --identity
+          - --allow-no-subscriptions
+          - --output
+          - none
+      register: azure_login
+      changed_when: false
+      no_log: true
+
+    - name: Sign in to Azure Container Registry
+      ansible.builtin.command:
+        argv:
+          - az
+          - acr
+          - login
+          - --name
+          - "{{ acr_name }}"
+          - --output
+          - none
+      register: acr_login
+      changed_when: false
+      no_log: true
+
+    - name: Pull the release image before stopping the current app
+      community.docker.docker_compose_v2_pull:
+        project_src: /opt/sokopulse
+        files:
+          - compose.yaml
+  always:
+    - name: Log out of Azure Container Registry
+      ansible.builtin.command:
+        argv:
+          - az
+          - acr
+          - logout
+          - --name
+          - "{{ acr_name }}"
+      changed_when: false
+      no_log: true
+      when:
+        - acr_login is defined
+        - acr_login.rc == 0
+
+    - name: Clear the managed identity Azure CLI session
+      ansible.builtin.command:
+        argv:
+          - az
+          - logout
+      changed_when: false
+      no_log: true
+      when:
+        - azure_login is defined
+        - azure_login.rc == 0
+  when: deploy_from_acr | bool
 
 - name: Deploy and check the application
   block:
-    - name: Start SokoPulse
+    - name: Inspect the current application container
+      community.docker.docker_container_info:
+        name: sokopulse
+      register: current_app
+
+    - name: Remove the legacy non-Compose application container
       community.docker.docker_container:
         name: sokopulse
-        image: "{{ app_image }}"
-        pull: never
-        state: started
-        restart_policy: unless-stopped
-        published_ports:
-          - "80:3000"
-        env:
-          NODE_ENV: production
-          PORT: "3000"
-        read_only: true
-        cap_drop:
-          - ALL
-        security_opts:
-          - no-new-privileges:true
-        log_driver: json-file
-        log_options:
-          max-size: 10m
-          max-file: "3"
+        state: absent
+      when:
+        - current_app.exists
+        - "'com.docker.compose.project' not in (current_app.container.Config.Labels | default({}))"
 
-    - name: Wait for the health endpoint
+    - name: Start SokoPulse with Docker Compose
+      community.docker.docker_compose_v2:
+        project_src: /opt/sokopulse
+        files:
+          - compose.yaml
+        project_name: sokopulse
+        state: present
+        pull: never
+        build: never
+        remove_orphans: true
+
+    - name: Wait for the database-backed readiness endpoint
       ansible.builtin.uri:
-        url: http://127.0.0.1/api/health
+        url: http://127.0.0.1:3000/api/ready
         return_content: true
         status_code: 200
       register: health
-      until: health.status == 200 and health.json.status == 'ok'
+      until: health.status == 200 and health.json.status == 'ready' and health.json.database == 'postgres'
       retries: 12
       delay: 5
 
+    - name: Remove the retired PostgreSQL container
+      community.docker.docker_container:
+        name: sokopulse-postgres
+        state: absent
+
   rescue:
-    - name: Read the container logs
+    - name: Read the application container logs
       ansible.builtin.command: docker logs --tail 50 sokopulse
       register: container_logs
       changed_when: false

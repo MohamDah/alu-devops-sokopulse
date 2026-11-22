@@ -38,21 +38,6 @@ output "summative_app_subnet_id" {
   value       = module.network.app_subnet_id
 }
 
-output "summative_database_subnet_id" {
-  description = "Resource ID of the delegated PostgreSQL subnet."
-  value       = module.network.database_subnet_id
-}
-
-output "summative_database_host" {
-  description = "Private DNS hostname for the Summative PostgreSQL server."
-  value       = module.database.host
-}
-
-output "summative_database_name" {
-  description = "Name of the SokoPulse PostgreSQL database."
-  value       = module.database.database_name
-}
-
 output "container_registry_login_server" {
   description = "Login server for the authenticated Azure Container Registry."
   value       = azurerm_container_registry.main.login_server

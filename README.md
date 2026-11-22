@@ -142,15 +142,12 @@ How it is set up:
 
 ### Summative Terraform (in progress)
 
-The current Terraform root describes a clean Azure stack: a public jumpbox
-restricted to the admin CIDR, a private app VM behind a Standard Load Balancer,
-private PostgreSQL, and an authenticated Azure Container Registry. See the
-[Terraform guide](terraform/README.md) for the architecture and inputs.
+The Terraform root describes the Azure stack: a public jumpbox restricted to the
+admin CIDR, a private app VM behind a Standard Load Balancer, and an
+authenticated Azure Container Registry. PostgreSQL runs as a container on the
+private app VM. See the [Terraform guide](terraform/README.md) for the
+architecture and inputs.
 
-The Formative 3 resources are still tracked in local Terraform state and may
-still exist in Azure. The Summative configuration will propose their removal
-alongside the new resources. Do not apply until the complete plan and cost
-estimate have been reviewed. The new configuration has not been applied.
 Ansible and the deployment workflow still need to be updated for this topology.
 
 ### Formative 3 deployment (historical)

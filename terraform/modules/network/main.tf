@@ -19,20 +19,6 @@ resource "azurerm_subnet" "app" {
   address_prefixes     = ["10.20.2.0/24"]
 }
 
-resource "azurerm_subnet" "database" {
-  name                 = "database-subnet"
-  resource_group_name  = var.resource_group_name
-  virtual_network_name = azurerm_virtual_network.summative.name
-  address_prefixes     = ["10.20.3.0/24"]
-  delegation {
-    name = "postgres-delegation"
-    service_delegation {
-      name    = "Microsoft.DBforPostgreSQL/flexibleServers"
-      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
-    }
-  }
-}
-
 resource "azurerm_network_security_group" "jumpbox" {
   name                = "${var.project_name}-jumpbox-nsg"
   location            = var.location
@@ -139,71 +125,4 @@ resource "azurerm_network_security_rule" "deny_other_app_inbound" {
 resource "azurerm_subnet_network_security_group_association" "app" {
   subnet_id                 = azurerm_subnet.app.id
   network_security_group_id = azurerm_network_security_group.app.id
-}
-
-resource "azurerm_network_security_group" "database" {
-  name                = "${var.project_name}-database-nsg"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-}
-
-resource "azurerm_network_security_rule" "database_from_app" {
-  name                        = "app-postgres"
-  priority                    = 100
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "5432"
-  source_address_prefix       = azurerm_subnet.app.address_prefixes[0]
-  destination_address_prefix  = "*"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.database.name
-}
-
-resource "azurerm_network_security_rule" "database_internal" {
-  name                        = "postgres-internal"
-  priority                    = 110
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "5432"
-  source_address_prefix       = azurerm_subnet.database.address_prefixes[0]
-  destination_address_prefix  = "*"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.database.name
-}
-
-resource "azurerm_network_security_rule" "database_load_balancer" {
-  name                        = "postgres-load-balancer"
-  priority                    = 115
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "5432"
-  source_address_prefix       = "AzureLoadBalancer"
-  destination_address_prefix  = "*"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.database.name
-}
-
-resource "azurerm_network_security_rule" "deny_other_database_access" {
-  name                        = "deny-other-postgres"
-  priority                    = 120
-  direction                   = "Inbound"
-  access                      = "Deny"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "5432"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = var.resource_group_name
-  network_security_group_name = azurerm_network_security_group.database.name
-}
-
-resource "azurerm_subnet_network_security_group_association" "database" {
-  subnet_id                 = azurerm_subnet.database.id
-  network_security_group_id = azurerm_network_security_group.database.id
 }

@@ -144,11 +144,13 @@ How it is set up:
 
 The Terraform root describes the Azure stack: a public jumpbox restricted to the
 admin CIDR, a private app VM behind a Standard Load Balancer, and an
-authenticated Azure Container Registry. PostgreSQL runs as a container on the
-private app VM. See the [Terraform guide](terraform/README.md) for the
+authenticated Azure Container Registry. MoMo transactions are stored in Azure
+Database for PostgreSQL Flexible Server. It runs in Spain Central because South
+Africa North had no PostgreSQL capacity, and the app reaches it privately over
+VNet peering and TLS. See the [Terraform guide](terraform/README.md) for the
 architecture and inputs.
 
-Ansible and the deployment workflow still need to be updated for this topology.
+Ansible deploys the app container to the private VM through the jumpbox. See [the Ansible guide](ansible/README.md) for deployment steps.
 
 ### Formative 3 deployment (historical)
 

@@ -10,26 +10,32 @@ resource group. The previous Formative 3 single-VM resources have been removed.
 ```text
 Internet --HTTP:80--> Standard Load Balancer --> private app VM:3000
                            |                         |
-                           |                         +--> authenticated ACR
-                           |                              (managed identity)
-                           |
                            +--> health probe: /api/ready
 
 Admin IP --SSH:22--> public jumpbox --SSH:22--> private app VM
-                                                 |
-                                                 +-- PostgreSQL container
-                                                     (not exposed)
+
+private app VM --VNet peering, TLS:5432--> Azure PostgreSQL Flexible Server
+ (South Africa North)                       (Spain Central, private subnet)
+
+Admin laptop --Ansible/image archive via SSH ProxyJump--> private app VM
 ```
 
 The VNet has separate jumpbox and app subnets. The app VM has no public IP. The
 load balancer also provides its outbound access for package and image
 downloads. ACR has admin credentials disabled; its public endpoint requires
-authenticated access.
+authenticated access. The current Ansible deployment transfers the locally
+built app image through SSH; ACR is reserved for a later CI/CD workflow.
 
-PostgreSQL runs as a container on the private app VM and is deployed with
-Ansible, not Terraform. Azure Database for PostgreSQL Flexible Server was
-tried first, but South Africa North had no capacity for the Burstable sizes
-available to this subscription (`RegionalAllocationFailed`).
+The managed database is Azure Database for PostgreSQL Flexible Server
+(Burstable B1ms, PostgreSQL 16, 7-day backups) in Spain Central. South Africa
+North returned `RegionalAllocationFailed` for every Burstable size allowed by
+the subscription, so the database has its own VNet in Spain Central, peered
+with the app VNet. It has no public access: it is injected into a delegated
+subnet whose NSG accepts port 5432 only from the app subnet, and a private DNS
+zone linked to both VNets resolves its hostname to a private address. The NSG
+also permits PostgreSQL traffic within its delegated subnet as required by
+Azure. Traffic between regions stays on the Azure backbone and the app connects
+over TLS.
 
 | Resource | Purpose |
 | --- | --- |
@@ -38,7 +44,9 @@ available to this subscription (`RegionalAllocationFailed`).
 | Public jumpbox VM | SSH entry point restricted to `admin_source_cidr` |
 | Private app VM | Runs SokoPulse without a public IP |
 | Standard Load Balancer | Public HTTP entry point and app VM outbound path |
-| Azure Container Registry | Stores the app image; app VM pulls with its managed identity |
+| Database VNet, peering, private DNS | Private path from the app subnet to PostgreSQL |
+| PostgreSQL Flexible Server | Managed database for MoMo transactions |
+| Azure Container Registry | Reserved for image publishing in a later CI/CD workflow |
 
 ## Prerequisites
 
@@ -71,6 +79,10 @@ SSH keys.
 | `admin_ssh_public_key` | Contents of the SSH public key | required |
 | `admin_source_cidr` | IPv4 CIDR allowed to SSH to the jumpbox | required |
 | `container_registry_name` | Globally unique lowercase ACR name | required |
+| `database_location` | Region for PostgreSQL | `spaincentral` |
+| `database_server_name` | Globally unique PostgreSQL server name | required |
+| `database_admin_username` | PostgreSQL admin login | `sokopulseadmin` |
+| `database_admin_password` | 20+ letters, numbers, `_` or `-` | required |
 
 Terraform state can contain sensitive values. Keep it private and out of Git.
 
@@ -97,6 +109,7 @@ After an approved apply, useful outputs include:
 | --- | --- |
 | `app_url` | Public HTTP address of the load balancer |
 | `jumpbox_ssh_command` | SSH command for the public jumpbox |
+| `ansible_inventory` | Dynamic Ansible inventory with jumpbox ProxyJump |
 | `container_registry_login_server` | ACR login server |
 | `app_vm_id`, `jumpbox_vm_id` | VM resource IDs |
 

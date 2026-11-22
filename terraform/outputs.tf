@@ -38,7 +38,38 @@ output "summative_app_subnet_id" {
   value       = module.network.app_subnet_id
 }
 
+output "database_host" {
+  description = "Private DNS hostname of the managed PostgreSQL server."
+  value       = module.database.host
+}
+
 output "container_registry_login_server" {
   description = "Login server for the authenticated Azure Container Registry."
   value       = azurerm_container_registry.main.login_server
+}
+
+output "ansible_inventory" {
+  description = "Dynamic Ansible inventory for the private app VM through the jumpbox."
+  value = {
+    _meta = {
+      hostvars = {
+        app = {
+          ansible_host               = azurerm_network_interface.app.private_ip_address
+          ansible_user               = var.admin_username
+          ansible_python_interpreter = "/usr/bin/python3"
+          ansible_ssh_common_args    = "-o ProxyJump=${var.admin_username}@${azurerm_public_ip.jumpbox.ip_address}"
+        }
+      }
+    }
+    sokopulse = {
+      hosts = ["app"]
+      vars = {
+        app_url      = "http://${azurerm_public_ip.load_balancer.ip_address}"
+        jumpbox_cidr = module.network.jumpbox_subnet_cidr
+        db_host      = module.database.host
+        db_name      = module.database.database_name
+        db_user      = module.database.admin_username
+      }
+    }
+  }
 }

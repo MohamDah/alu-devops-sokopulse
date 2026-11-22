@@ -13,6 +13,19 @@ module "network" {
   admin_source_cidr   = var.admin_source_cidr
 }
 
+module "database" {
+  source                  = "./modules/database"
+  project_name            = var.project_name
+  location                = var.database_location
+  resource_group_name     = azurerm_resource_group.main.name
+  server_name             = var.database_server_name
+  app_vnet_id             = module.network.vnet_id
+  app_vnet_name           = module.network.vnet_name
+  app_subnet_cidr         = module.network.app_subnet_cidr
+  database_admin_username = var.database_admin_username
+  database_admin_password = var.database_admin_password
+}
+
 resource "azurerm_container_registry" "main" {
   name                          = var.container_registry_name
   resource_group_name           = azurerm_resource_group.main.name

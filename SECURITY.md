@@ -50,7 +50,8 @@ also passed all three scans, the image build and all 76 tests.
   to upgrade to a supported version and test it before production use.
 
 This is a short-lived course demo, not a real payment service. It has no
-authentication or rate limiting, and transactions reset on restart.
+authentication or rate limiting. Transactions reset on restart when using
+in-memory storage; they persist when PostgreSQL is configured.
 Do not enter real phone numbers or payment details.
 
 See the [Ansible guide](ansible/README.md) for SSH, firewall and container

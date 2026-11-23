@@ -152,6 +152,31 @@ architecture and inputs.
 
 Ansible deploys the app container to the private VM through the jumpbox. See [the Ansible guide](ansible/README.md) for deployment steps.
 
+**Live demo:** [http://102.37.104.41/](http://102.37.104.41/) — HTTP only;
+use synthetic data and do not enter real payment details.
+
+Summative target architecture (the CD workflow still needs GitHub setup and a
+successful end-to-end run):
+
+```text
+Users --HTTP:80--> Load Balancer --> Private app VM:3000
+Admin IP --SSH--> Jumpbox --SSH--> Private app VM
+                                      |       |
+                                      |       +-- Managed identity: AcrPull
+                                      |                    |
+                                      |                    v
+                                      |               Private ACR
+                                      |
+                                      +-- TLS:5432 over peered VNets
+                                                    |
+                                                    v
+                                      Managed PostgreSQL (Spain Central)
+
+Merge to main --> CI/tests/scans --> CD builds SHA image --> ACR
+                                   --> temporary runner-IP SSH via jumpbox
+                                   --> Ansible + Docker Compose deploy
+```
+
 ### Formative 3 deployment (historical)
 
 Formative 3 used one public Ubuntu VM, with Ansible deploying the app container
@@ -200,12 +225,63 @@ docker build -t sokopulse:ci .
 
 **Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests, Docker build and image scan. The Terraform scan still runs. The CI badge at the top links to the workflow; check the PR's own results before merging.
 
+## Continuous Deployment (draft)
+
+The draft [CD workflow](.github/workflows/cd.yml) is designed to run on pushes
+to `main` (normally after a protected pull request is merged). It repeats the
+tests and scans, builds an AMD64 image tagged with the full commit SHA, pushes
+it to ACR, then deploys and verifies it through Ansible. The workflow has not
+yet been configured or run in GitHub Actions; the manual deployment documented
+in the [Ansible guide](ansible/README.md) remains the verified path.
+
+Before enabling it, configure the following under **Repository Settings →
+Secrets and variables → Actions**.
+
+**Repository variables**
+
+| Variable | Value |
+|---|---|
+| `AZURE_CLIENT_ID` | Entra application/service-principal client ID for GitHub OIDC |
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_RESOURCE_GROUP` | Resource group containing the jumpbox, NSG and ACR |
+| `JUMPBOX_NSG_NAME` | Jumpbox network security group name |
+| `ACR_NAME` | Azure Container Registry name |
+| `ACR_LOGIN_SERVER` | ACR login server, for example `example.azurecr.io` |
+| `JUMPBOX_PUBLIC_IP` | Jumpbox public IPv4 address |
+| `APP_PRIVATE_IP` | App VM private IPv4 address |
+| `APP_URL` | Public application URL |
+| `JUMPBOX_CIDR` | App-side SSH-allowed jumpbox subnet in CIDR notation |
+| `ADMIN_USERNAME` | SSH username configured on both VMs |
+| `DB_HOST` | Private PostgreSQL server hostname |
+| `DB_NAME` | PostgreSQL database name |
+| `DB_USER` | PostgreSQL user |
+
+**Repository secrets**
+
+| Secret | Value |
+|---|---|
+| `DATABASE_ADMIN_PASSWORD` | PostgreSQL password; follow the Terraform password policy |
+| `DEPLOY_SSH_PRIVATE_KEY` | Private key matching the public key installed on both VMs |
+| `JUMPBOX_KNOWN_HOSTS` | Verified jumpbox host-key entry or entries |
+| `APP_KNOWN_HOSTS` | Verified app VM host-key entry or entries |
+
+Configure an Entra federated credential that trusts this repository's `main`
+branch; do not use a long-lived Azure client secret. Scope `AcrPush` to the ACR
+and `Network Contributor` to the jumpbox NSG for the GitHub identity. Verify
+both SSH host keys through a trusted channel before saving them. The workflow
+temporarily allows only the current runner's `/32` address to SSH to the
+jumpbox, removes that rule after deployment, and removes a stale rule at the
+start of a later run if a previous runner could not clean up.
+
 ## Project Structure
 
 ```text
 alu-devops-sokopulse/
 ├── .github/
-│   ├── workflows/ci.yml        # lint, tests, build and security scans
+│   ├── workflows/
+│   │   ├── ci.yml              # lint, tests, build and security scans
+│   │   └── cd.yml              # main-branch publish and deployment (draft)
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── public/                     # dashboard (HTML, CSS, JS)
@@ -226,7 +302,7 @@ alu-devops-sokopulse/
 │   ├── playbook.yml
 │   ├── verify.yml              # deployed server checks
 │   ├── requirements.yml
-│   ├── roles/                  # docker, security, application
+│   ├── roles/                  # docker, security, registry, application
 │   └── README.md
 ├── .dockerignore
 ├── .env.example
@@ -234,6 +310,7 @@ alu-devops-sokopulse/
 ├── Dockerfile
 ├── LICENSE
 ├── SECURITY.md
+├── CHANGELOG.md
 ├── docker-compose.yml
 ├── eslint.config.js
 ├── package.json

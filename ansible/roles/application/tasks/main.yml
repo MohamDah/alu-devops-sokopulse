@@ -84,11 +84,9 @@
     - name: Log out of Azure Container Registry
       ansible.builtin.command:
         argv:
-          - az
-          - acr
+          - docker
           - logout
-          - --name
-          - "{{ acr_name }}"
+          - "{{ acr_login_server }}"
       changed_when: false
       no_log: true
       when:

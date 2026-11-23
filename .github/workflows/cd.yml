@@ -192,12 +192,17 @@ jobs:
           )
 
           user = os.environ["ADMIN_USERNAME"]
-          common_args = (
-              f"-o ProxyJump={user}@{os.environ['JUMPBOX_PUBLIC_IP']} "
-              f"-o StrictHostKeyChecking=yes "
+          ssh_options = (
+              "-o StrictHostKeyChecking=yes "
               f"-o UserKnownHostsFile={known_hosts} "
               "-o IdentitiesOnly=yes"
           )
+          # ProxyJump does not pass these options to the jumpbox hop.
+          proxy_command = (
+              f"ssh {ssh_options} -i {key_path} -W %h:%p "
+              f"{user}@{os.environ['JUMPBOX_PUBLIC_IP']}"
+          )
+          common_args = f"{ssh_options} -o ProxyCommand=\"{proxy_command}\""
           inventory = {
               "all": {
                   "children": {

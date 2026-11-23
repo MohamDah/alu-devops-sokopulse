@@ -3,6 +3,16 @@ const { createApp } = require('./app');
 const { loadConfig } = require('./config');
 
 const { port } = loadConfig();
-createApp().listen(port, () => {
-  console.log(`SokoPulse running on http://localhost:${port}`);
+
+async function start() {
+  const app = createApp();
+  await app.locals.transactionStore.initialize();
+  app.listen(port, () => {
+    console.log(`SokoPulse running on http://localhost:${port}`);
+  });
+}
+
+start().catch((err) => {
+  console.error('SokoPulse failed to start:', err.message);
+  process.exitCode = 1;
 });

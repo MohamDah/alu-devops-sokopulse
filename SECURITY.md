@@ -38,10 +38,11 @@ also passed all three scans, the image build and all 76 tests.
   zero findings. We are accepting these for now because they are not shipped
   in the runtime image. We avoided `npm audit fix --force` because its suggested
   Jest downgrade is a breaking change that needs separate testing.
-- **Public HTTP:** Terraform allows port 80 so reviewers can open the demo.
-  Trivy rule `AZU-0047` is ignored only for this rule, with an expiry of
-  **30 November 2026**. SSH stays restricted to the admin CIDR. HTTP is not
-  encrypted, so we only use synthetic data.
+- **Public HTTP:** the load balancer exposes the demo on port 80, and the app
+  subnet allows that traffic to reach port 3000. Trivy rule `AZU-0047` is
+  ignored only for this app-ingress rule, with an expiry of **30 November
+  2026**. SSH stays restricted to the admin CIDR. HTTP is not encrypted, so
+  we only use synthetic data.
 - **Unfixed image vulnerabilities:** CI ignores findings without an available
   fix so an unavailable patch does not permanently block coursework.
   A full scan without `--ignore-unfixed` is needed before a real release.
@@ -49,7 +50,8 @@ also passed all three scans, the image build and all 76 tests.
   to upgrade to a supported version and test it before production use.
 
 This is a short-lived course demo, not a real payment service. It has no
-authentication or rate limiting, and transactions reset on restart.
+authentication or rate limiting. Transactions reset on restart when using
+in-memory storage; they persist when PostgreSQL is configured.
 Do not enter real phone numbers or payment details.
 
 See the [Ansible guide](ansible/README.md) for SSH, firewall and container

@@ -1,7 +1,13 @@
 - name: Check the deployed server
   hosts: sokopulse
   become: true
+  vars:
+    deploy_from_acr: false
   tasks:
+    - name: Check Docker Compose is installed
+      ansible.builtin.command: docker compose version
+      changed_when: false
+
     - name: Read the container settings
       community.docker.docker_container_info:
         name: sokopulse
@@ -17,6 +23,14 @@
           - "'ALL' in app.container.HostConfig.CapDrop"
           - "'no-new-privileges:true' in app.container.HostConfig.SecurityOpt"
           - app.container.HostConfig.RestartPolicy.Name == 'unless-stopped'
+          - "'com.docker.compose.project' in (app.container.Config.Labels | default({}))"
+
+    - name: Check the deployed ACR image tag
+      ansible.builtin.assert:
+        that:
+          - app.container.Config.Image == acr_login_server ~ '/sokopulse:' ~ image_tag
+        fail_msg: The running container is not using the requested SHA-tagged ACR image.
+      when: deploy_from_acr | bool
 
     - name: Read the active SSH settings
       ansible.builtin.command: /usr/sbin/sshd -T
@@ -43,9 +57,20 @@
           - "'Status: active' in firewall.stdout"
           - "'deny (incoming), allow (outgoing)' in firewall.stdout"
 
+    - name: Resolve the managed database hostname
+      ansible.builtin.command: getent hosts {{ db_host }}
+      register: db_dns
+      changed_when: false
+
+    - name: Verify the database resolves to its private address
+      ansible.builtin.assert:
+        that:
+          - db_dns.stdout is match('^10\\.30\\.')
+        fail_msg: "{{ db_host }} should resolve to the private database subnet 10.30.1.0/24."
+
     - name: Check the API through the public address
       ansible.builtin.uri:
-        url: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}/api/health"
+        url: "{{ app_url }}/api/ready"
         return_content: true
         status_code: 200
       delegate_to: localhost
@@ -55,11 +80,12 @@
     - name: Check the health response
       ansible.builtin.assert:
         that:
-          - public_health.json.status == 'ok'
+          - public_health.json.status == 'ready'
+          - public_health.json.database == 'postgres'
 
     - name: Check the price endpoint from the laptop
       ansible.builtin.uri:
-        url: "http://{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}/api/prices"
+        url: "{{ app_url }}/api/prices"
         status_code: 200
       delegate_to: localhost
       become: false

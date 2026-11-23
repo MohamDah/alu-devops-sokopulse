@@ -35,7 +35,7 @@ function calculateFee(subtotal) {
   return FEE_TIERS.find((tier) => subtotal <= tier.upTo).fee;
 }
 
-function createMomoService() {
+function createMomoService(store = null) {
   const transactions = [];
 
   function pay({ buyerPhone, farmerPhone, commodity, quantityKg, pricePerKg, scenario = 'success' } = {}) {
@@ -70,15 +70,22 @@ function createMomoService() {
       failureReason,
       createdAt: new Date().toISOString(),
     };
-    transactions.push(transaction);
+    if (!store) transactions.push(transaction);
+    return { ...transaction };
+  }
+
+  async function payAndStore(input) {
+    const transaction = pay(input);
+    if (store) await store.add(transaction);
     return { ...transaction };
   }
 
   function listTransactions() {
+    if (store) return store.list();
     return transactions.map((t) => ({ ...t })).reverse();
   }
 
-  return { pay, listTransactions };
+  return { pay, payAndStore, listTransactions };
 }
 
 module.exports = { createMomoService, FEE_TIERS };

@@ -1,0 +1,52 @@
+- name: Install Azure CLI repository prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - python3-debian
+    state: present
+    update_cache: true
+  when: deploy_from_acr | bool
+
+- name: Create the apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: deploy_from_acr | bool
+
+- name: Download Microsoft's package signing key
+  ansible.builtin.get_url:
+    url: https://packages.microsoft.com/keys/microsoft.asc
+    dest: /etc/apt/keyrings/microsoft.asc
+    owner: root
+    group: root
+    mode: "0644"
+  when: deploy_from_acr | bool
+
+- name: Add Microsoft's Azure CLI repository
+  ansible.builtin.deb822_repository:
+    name: azure-cli
+    types:
+      - deb
+    uris:
+      - https://packages.microsoft.com/repos/azure-cli
+    suites:
+      - "{{ ansible_distribution_release }}"
+    components:
+      - main
+    architectures:
+      - amd64
+    signed_by: /etc/apt/keyrings/microsoft.asc
+    state: present
+  when: deploy_from_acr | bool
+
+- name: Install Azure CLI
+  ansible.builtin.apt:
+    name: azure-cli
+    state: present
+    update_cache: true
+  when: deploy_from_acr | bool

@@ -25,7 +25,7 @@ SokoPulse is a learning project that simulates this chain: compare prices, check
 
 ## Project Overview
 
-SokoPulse is a small Node.js web application with three independent services: a commodity price tracker, a USSD menu simulator and a mobile money payment simulator. A single-page dashboard lets you try all three in a browser. Everything runs from seeded in-memory data, so there is no database to install and no account to create.
+SokoPulse is a small Node.js web application with three independent services: a commodity price tracker, a USSD menu simulator and a mobile money payment simulator. A single-page dashboard lets you try all three in a browser. Market prices use seeded in-memory data. MoMo transactions use in-memory storage by default, or PostgreSQL when `DATABASE_URL` is configured.
 
 The application is deliberately simple. The focus of the course project is the DevOps practice around it: protected branches, code review, automated tests, CI, containers and infrastructure as code. Each service lives in its own folder under `src/services/` with its own routes, logic and data, so it can later be split into a separate container (LO7 microservices readiness).
 
@@ -50,7 +50,7 @@ Formative 1 set up the app and team workflow. Formative 2 added Docker and CI. F
 | --- | --- |
 | Backend | Node.js 20+, Express 5, JavaScript (CommonJS), Helmet, dotenv |
 | Frontend | Plain HTML, CSS and JavaScript (no framework, no build step) |
-| Database / data layer | Seeded JavaScript data and in-memory arrays. No external database; state resets on restart |
+| Database / data layer | Seeded in-memory market data; MoMo transactions in memory by default or PostgreSQL with `DATABASE_URL` |
 | Testing & DevOps | Jest, Supertest, ESLint, GitHub Actions, Docker, Docker Compose, npm audit, Trivy, Terraform, Ansible, Azure and GitHub (branch protection, CODEOWNERS, PR template) |
 
 ## Getting Started
@@ -73,7 +73,7 @@ npm test
 npm start
 ```
 
-Open http://localhost:3000 for the dashboard. The `.env` file only sets `PORT` (default `3000`); the app also runs without it. Use `npm run test:coverage` for a coverage report.
+Open http://localhost:3000 for the dashboard. With the example `.env`, the app uses in-memory transaction storage and data resets on restart. To persist MoMo transactions, set `DATABASE_URL` to a PostgreSQL connection string; the app creates its transaction table at startup. `DB_SSL` defaults to `true`; set it to `false` only for a local PostgreSQL instance that does not use TLS. Use `npm run test:coverage` for a coverage report.
 
 ### Usage
 
@@ -109,6 +109,8 @@ curl -X POST http://localhost:3000/api/momo/pay -H "Content-Type: application/js
 curl "http://localhost:3000/api/momo/transactions"
 ```
 
+When PostgreSQL is configured, this transaction list is retained across application restarts. Without `DATABASE_URL`, it is kept in memory and resets on restart.
+
 Set `"scenario"` to `insufficient_funds` or `pin_timeout` for a deterministic failed payment (still returned as HTTP 201 with `"status":"FAILED"`). Invalid input returns HTTP 400. Fee tiers (simulated, deducted from the farmer): up to 5,000 RWF = 50; up to 50,000 = 300; up to 500,000 = 1,500; above = 5,000.
 
 ### Run with Docker Compose
@@ -133,61 +135,60 @@ How it is set up:
 - **`Dockerfile`:** two stages on `node:20-alpine`. The first installs production dependencies, the second is a small runtime image. It runs as the non-root `node` user and has a health check on `/api/health`.
 - **`docker-compose.yml`:** one `app` service built from the Dockerfile, with a restart policy, a health check and a named network.
 - **Port:** the app always listens on 3000 inside the container. To use another port on your machine, set `PORT` in `.env` (for example `PORT=8080`) and open http://localhost:8080.
-- **Data:** the app has no database, so there is no volume. Transactions are kept in memory and reset when the container restarts.
+- **Data:** no database container is included. The app uses in-memory transactions unless a PostgreSQL `DATABASE_URL` is supplied through `.env`; an external database keeps transactions across container restarts.
 - **`.dockerignore`:** keeps `node_modules`, `.env` files, tests and docs out of the image.
 
-## Azure Deployment (Formative 3)
+## Azure Infrastructure
 
-The app is still one container. We did not add microservices or a Kubernetes
-cluster for this assignment.
+### Summative Terraform (in progress)
+
+The Terraform root describes the Azure stack: a public jumpbox restricted to the
+admin CIDR, a private app VM behind a Standard Load Balancer, and an
+authenticated Azure Container Registry. MoMo transactions are stored in Azure
+Database for PostgreSQL Flexible Server. It runs in Spain Central because South
+Africa North had no PostgreSQL capacity, and the app reaches it privately over
+VNet peering and TLS. See the [Terraform guide](terraform/README.md) for the
+architecture and inputs.
+
+Ansible deploys the app container to the private VM through the jumpbox. See [the Ansible guide](ansible/README.md) for deployment steps.
+
+**Live demo:** [http://102.37.104.41/](http://102.37.104.41/) — HTTP only;
+use synthetic data and do not enter real payment details.
+
+Summative target architecture (the CD workflow still needs GitHub setup and a
+successful end-to-end run):
 
 ```text
-Terraform -> Azure network, security rules and Ubuntu VM
-Ansible   -> Docker, SSH hardening, firewall and app container
-Browser   -> VM public IP on port 80 -> container port 3000
+Users --HTTP:80--> Load Balancer --> Private app VM:3000
+Admin IP --SSH--> Jumpbox --SSH--> Private app VM
+                                      |       |
+                                      |       +-- Managed identity: AcrPull
+                                      |                    |
+                                      |                    v
+                                      |               Private ACR
+                                      |
+                                      +-- TLS:5432 over peered VNets
+                                                    |
+                                                    v
+                                      Managed PostgreSQL (Spain Central)
+
+Merge to main --> CI/tests/scans --> CD builds SHA image --> ACR
+                                   --> temporary runner-IP SSH via jumpbox
+                                   --> Ansible + Docker Compose deploy
 ```
 
-1. Follow [the Terraform guide](terraform/README.md) to sign in to Azure,
-   set your own variables, review the plan and create the infrastructure.
-   SSH is restricted to your admin CIDR; HTTP is open for the demo.
-2. Follow [the Ansible guide](ansible/README.md) to install the collections,
-   build an amd64 image and save it locally. Its dynamic inventory reads the
-   VM address and connection settings from Terraform.
-3. Run the deployment playbook, then run it again to check idempotence.
-   Run the verification playbook to check SSH settings, UFW, the container
-   and public API access.
+### Formative 3 deployment (historical)
 
-These are the main commands, after the setup steps in those guides:
+Formative 3 used one public Ubuntu VM, with Ansible deploying the app container
+to port 3000. Our [Ansible PR](https://github.com/MohamDah/alu-devops-sokopulse/pull/28)
+records a successful deployment: the first playbook run reported `changed=10`,
+the second `changed=0`, and verification passed. That is evidence of that run,
+not a guarantee that the VM is still online.
 
-```bash
-terraform -chdir=terraform init
-terraform -chdir=terraform plan -out=deploy.tfplan
-terraform -chdir=terraform apply deploy.tfplan
-ansible-galaxy collection install -r ansible/requirements.yml
-docker build --platform linux/amd64 -t sokopulse:f3 .
-docker save -o sokopulse-image.tar sokopulse:f3
-ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-ansible-playbook -i ansible/inventory.sh ansible/playbook.yml
-ansible-playbook -i ansible/inventory.sh ansible/verify.yml
-terraform -chdir=terraform output -raw app_url
-```
-
-Use your SSH key as explained in the Ansible guide. Terraform state, private
-keys, real variable files and image archives stay off Git. Deployment is
-manual; GitHub Actions does not log in to Azure or deploy on merge.
-
-Our [Ansible PR](https://github.com/MohamDah/alu-devops-sokopulse/pull/28)
-records a successful fresh Azure deployment. The first playbook run reported
-`changed=10`, the second `changed=0`, and verification passed with no failures.
-That is evidence of that run, not a guarantee that a VM is still online.
-
-**Costs:** the VM, disk and public IP can keep costing money after testing.
-When the team is done, review and run `terraform -chdir=terraform destroy`.
-This deletes the infrastructure and its data, so agree with the team first.
-
-This deployment is a short-lived HTTP demo, not a production service. Use
-synthetic data only. Read [the security findings and accepted risks](SECURITY.md)
-before exposing it.
+Terraform state, private keys, real variable files and image archives stay off
+Git. The original deployment was a short-lived HTTP demo, not a production
+service; use synthetic data only. Read [the security findings and accepted
+risks](SECURITY.md) before exposing it.
 
 ## Continuous Integration
 
@@ -224,12 +225,63 @@ docker build -t sokopulse:ci .
 
 **Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests, Docker build and image scan. The Terraform scan still runs. The CI badge at the top links to the workflow; check the PR's own results before merging.
 
+## Continuous Deployment (draft)
+
+The draft [CD workflow](.github/workflows/cd.yml) is designed to run on pushes
+to `main` (normally after a protected pull request is merged). It repeats the
+tests and scans, builds an AMD64 image tagged with the full commit SHA, pushes
+it to ACR, then deploys and verifies it through Ansible. The workflow has not
+yet been configured or run in GitHub Actions; the manual deployment documented
+in the [Ansible guide](ansible/README.md) remains the verified path.
+
+Before enabling it, configure the following under **Repository Settings →
+Secrets and variables → Actions**.
+
+**Repository variables**
+
+| Variable | Value |
+|---|---|
+| `AZURE_CLIENT_ID` | Entra application/service-principal client ID for GitHub OIDC |
+| `AZURE_TENANT_ID` | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID |
+| `AZURE_RESOURCE_GROUP` | Resource group containing the jumpbox, NSG and ACR |
+| `JUMPBOX_NSG_NAME` | Jumpbox network security group name |
+| `ACR_NAME` | Azure Container Registry name |
+| `ACR_LOGIN_SERVER` | ACR login server, for example `example.azurecr.io` |
+| `JUMPBOX_PUBLIC_IP` | Jumpbox public IPv4 address |
+| `APP_PRIVATE_IP` | App VM private IPv4 address |
+| `APP_URL` | Public application URL |
+| `JUMPBOX_CIDR` | App-side SSH-allowed jumpbox subnet in CIDR notation |
+| `ADMIN_USERNAME` | SSH username configured on both VMs |
+| `DB_HOST` | Private PostgreSQL server hostname |
+| `DB_NAME` | PostgreSQL database name |
+| `DB_USER` | PostgreSQL user |
+
+**Repository secrets**
+
+| Secret | Value |
+|---|---|
+| `DATABASE_ADMIN_PASSWORD` | PostgreSQL password; follow the Terraform password policy |
+| `DEPLOY_SSH_PRIVATE_KEY` | Private key matching the public key installed on both VMs |
+| `JUMPBOX_KNOWN_HOSTS` | Verified jumpbox host-key entry or entries |
+| `APP_KNOWN_HOSTS` | Verified app VM host-key entry or entries |
+
+Configure an Entra federated credential that trusts this repository's `main`
+branch; do not use a long-lived Azure client secret. Scope `AcrPush` to the ACR
+and `Network Contributor` to the jumpbox NSG for the GitHub identity. Verify
+both SSH host keys through a trusted channel before saving them. The workflow
+temporarily allows only the current runner's `/32` address to SSH to the
+jumpbox, removes that rule after deployment, and removes a stale rule at the
+start of a later run if a previous runner could not clean up.
+
 ## Project Structure
 
 ```text
 alu-devops-sokopulse/
 ├── .github/
-│   ├── workflows/ci.yml        # lint, tests, build and security scans
+│   ├── workflows/
+│   │   ├── ci.yml              # lint, tests, build and security scans
+│   │   └── cd.yml              # main-branch publish and deployment (draft)
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── public/                     # dashboard (HTML, CSS, JS)
@@ -250,7 +302,7 @@ alu-devops-sokopulse/
 │   ├── playbook.yml
 │   ├── verify.yml              # deployed server checks
 │   ├── requirements.yml
-│   ├── roles/                  # docker, security, application
+│   ├── roles/                  # docker, security, registry, application
 │   └── README.md
 ├── .dockerignore
 ├── .env.example
@@ -258,6 +310,7 @@ alu-devops-sokopulse/
 ├── Dockerfile
 ├── LICENSE
 ├── SECURITY.md
+├── CHANGELOG.md
 ├── docker-compose.yml
 ├── eslint.config.js
 ├── package.json

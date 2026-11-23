@@ -1,0 +1,303 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: sokopulse-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Test, scan, publish, and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      JUMPBOX_NSG_NAME: ${{ vars.JUMPBOX_NSG_NAME }}
+      ACR_NAME: ${{ vars.ACR_NAME }}
+      ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+      JUMPBOX_PUBLIC_IP: ${{ vars.JUMPBOX_PUBLIC_IP }}
+      APP_PRIVATE_IP: ${{ vars.APP_PRIVATE_IP }}
+      APP_URL: ${{ vars.APP_URL }}
+      JUMPBOX_CIDR: ${{ vars.JUMPBOX_CIDR }}
+      ADMIN_USERNAME: ${{ vars.ADMIN_USERNAME }}
+      DB_HOST: ${{ vars.DB_HOST }}
+      DB_NAME: ${{ vars.DB_NAME }}
+      DB_USER: ${{ vars.DB_USER }}
+
+    steps:
+      - name: Check out the merged commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Check deployment configuration
+        env:
+          DB_PASSWORD: ${{ secrets.DATABASE_ADMIN_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          JUMPBOX_KNOWN_HOSTS: ${{ secrets.JUMPBOX_KNOWN_HOSTS }}
+          APP_KNOWN_HOSTS: ${{ secrets.APP_KNOWN_HOSTS }}
+        run: |
+          python3 - <<'PY'
+          import ipaddress
+          import os
+          import re
+          import sys
+
+          required = (
+              "AZURE_RESOURCE_GROUP",
+              "JUMPBOX_NSG_NAME",
+              "ACR_NAME",
+              "ACR_LOGIN_SERVER",
+              "JUMPBOX_PUBLIC_IP",
+              "APP_PRIVATE_IP",
+              "APP_URL",
+              "JUMPBOX_CIDR",
+              "ADMIN_USERNAME",
+              "DB_HOST",
+              "DB_NAME",
+              "DB_USER",
+              "DB_PASSWORD",
+              "SSH_PRIVATE_KEY",
+              "JUMPBOX_KNOWN_HOSTS",
+              "APP_KNOWN_HOSTS",
+          )
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              print("Missing GitHub variables or secrets: " + ", ".join(missing), file=sys.stderr)
+              sys.exit(1)
+
+          for name in ("JUMPBOX_PUBLIC_IP", "APP_PRIVATE_IP"):
+              if ipaddress.ip_address(os.environ[name]).version != 4:
+                  raise ValueError(f"{name} must be an IPv4 address")
+
+          ipaddress.ip_network(os.environ["JUMPBOX_CIDR"], strict=True)
+          if not re.fullmatch(r"[A-Za-z0-9_-]{20,}", os.environ["DB_PASSWORD"]):
+              raise ValueError("DATABASE_ADMIN_PASSWORD must match the Terraform password policy")
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Scan npm dependencies
+        run: npm audit --audit-level=high
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Docker image
+        run: docker build --platform linux/amd64 -t sokopulse:cd .
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          version: v0.76.2
+          scan-type: image
+          image-ref: sokopulse:cd
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Scan Terraform
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          version: v0.76.2
+          scan-type: config
+          scan-ref: terraform
+          tf-vars: terraform/terraform.tfvars.example
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Sign in to Azure with GitHub OIDC
+        id: azure_login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Remove a stale GitHub runner SSH rule
+        run: |
+          rule=$(az network nsg rule list \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --nsg-name "$JUMPBOX_NSG_NAME" \
+            --query "[?name=='github-actions-ssh'].name | [0]" \
+            --output tsv)
+          if [ -n "$rule" ]; then
+            az network nsg rule delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --nsg-name "$JUMPBOX_NSG_NAME" \
+              --name github-actions-ssh
+          fi
+
+      - name: Read and validate this runner's public IP
+        id: runner_ip
+        run: |
+          address=$(curl --fail --silent --show-error --max-time 10 https://api.ipify.org)
+          python3 -c 'import ipaddress,sys; ipaddress.IPv4Address(sys.argv[1])' "$address"
+          echo "address=$address" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ACR and push the SHA-tagged image
+        run: |
+          az acr login --name "$ACR_NAME"
+          image="$ACR_LOGIN_SERVER/sokopulse:$GITHUB_SHA"
+          docker tag sokopulse:cd "$image"
+          docker push "$image"
+
+      - name: Install Ansible and required collections
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ansible-venv"
+          "$RUNNER_TEMP/ansible-venv/bin/python" -m pip install 'ansible-core>=2.19,<2.20'
+          "$RUNNER_TEMP/ansible-venv/bin/ansible-galaxy" collection install -r ansible/requirements.yml
+
+      - name: Prepare SSH credentials and Ansible inputs
+        env:
+          DB_PASSWORD: ${{ secrets.DATABASE_ADMIN_PASSWORD }}
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          JUMPBOX_KNOWN_HOSTS: ${{ secrets.JUMPBOX_KNOWN_HOSTS }}
+          APP_KNOWN_HOSTS: ${{ secrets.APP_KNOWN_HOSTS }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          temp = Path(os.environ["RUNNER_TEMP"])
+
+          def write_private_file(name, content):
+              path = temp / name
+              path.write_text(content.rstrip() + "\n", encoding="utf-8")
+              path.chmod(0o600)
+              return str(path)
+
+          key_path = write_private_file("deploy_key", os.environ["SSH_PRIVATE_KEY"])
+          known_hosts = write_private_file(
+              "known_hosts",
+              os.environ["JUMPBOX_KNOWN_HOSTS"] + "\n" + os.environ["APP_KNOWN_HOSTS"],
+          )
+
+          user = os.environ["ADMIN_USERNAME"]
+          common_args = (
+              f"-o ProxyJump={user}@{os.environ['JUMPBOX_PUBLIC_IP']} "
+              f"-o StrictHostKeyChecking=yes "
+              f"-o UserKnownHostsFile={known_hosts} "
+              "-o IdentitiesOnly=yes"
+          )
+          inventory = {
+              "all": {
+                  "children": {
+                      "sokopulse": {
+                          "hosts": {
+                              "app": {
+                                  "ansible_host": os.environ["APP_PRIVATE_IP"],
+                                  "ansible_user": user,
+                                  "ansible_python_interpreter": "/usr/bin/python3",
+                                  "ansible_ssh_private_key_file": key_path,
+                                  "ansible_ssh_common_args": common_args,
+                              }
+                          },
+                          "vars": {
+                              "app_url": os.environ["APP_URL"],
+                              "jumpbox_cidr": os.environ["JUMPBOX_CIDR"],
+                              "db_host": os.environ["DB_HOST"],
+                              "db_name": os.environ["DB_NAME"],
+                              "db_user": os.environ["DB_USER"],
+                              "acr_name": os.environ["ACR_NAME"],
+                              "acr_login_server": os.environ["ACR_LOGIN_SERVER"],
+                          },
+                      }
+                  }
+              }
+          }
+          (temp / "inventory.json").write_text(json.dumps(inventory), encoding="utf-8")
+          (temp / "deploy-vars.json").write_text(
+              json.dumps(
+                  {
+                      "db_password": os.environ["DB_PASSWORD"],
+                      "deploy_from_acr": True,
+                      "image_tag": os.environ["GITHUB_SHA"],
+                  }
+              ),
+              encoding="utf-8",
+          )
+          (temp / "deploy-vars.json").chmod(0o600)
+          PY
+
+          ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock" -s > "$RUNNER_TEMP/ssh-agent.env"
+          agent_pid=$(sed -n 's/^SSH_AGENT_PID=\([0-9][0-9]*\);.*/\1/p' "$RUNNER_TEMP/ssh-agent.env")
+          if [ -z "$agent_pid" ]; then
+            echo "Could not start ssh-agent" >&2
+            exit 1
+          fi
+          echo "SSH_AUTH_SOCK=$RUNNER_TEMP/ssh-agent.sock" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$agent_pid" >> "$GITHUB_ENV"
+          SSH_AUTH_SOCK="$RUNNER_TEMP/ssh-agent.sock" ssh-add "$RUNNER_TEMP/deploy_key"
+
+      - name: Allow this runner to SSH to the jumpbox
+        run: |
+          az network nsg rule create \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --nsg-name "$JUMPBOX_NSG_NAME" \
+            --name github-actions-ssh \
+            --priority 105 \
+            --direction Inbound \
+            --access Allow \
+            --protocol Tcp \
+            --source-address-prefixes "${{ steps.runner_ip.outputs.address }}/32" \
+            --source-port-ranges '*' \
+            --destination-address-prefixes '*' \
+            --destination-port-ranges 22 \
+            --output none
+
+      - name: Deploy and verify with Ansible
+        run: |
+          "$RUNNER_TEMP/ansible-venv/bin/ansible-playbook" \
+            -i "$RUNNER_TEMP/inventory.json" \
+            ansible/playbook.yml \
+            --extra-vars "@$RUNNER_TEMP/deploy-vars.json"
+          "$RUNNER_TEMP/ansible-venv/bin/ansible-playbook" \
+            -i "$RUNNER_TEMP/inventory.json" \
+            ansible/verify.yml \
+            --extra-vars "@$RUNNER_TEMP/deploy-vars.json"
+
+      - name: Remove the temporary GitHub runner SSH rule
+        if: ${{ always() && steps.azure_login.outcome == 'success' }}
+        run: |
+          rule=$(az network nsg rule list \
+            --resource-group "$AZURE_RESOURCE_GROUP" \
+            --nsg-name "$JUMPBOX_NSG_NAME" \
+            --query "[?name=='github-actions-ssh'].name | [0]" \
+            --output tsv)
+          if [ -n "$rule" ]; then
+            az network nsg rule delete \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --nsg-name "$JUMPBOX_NSG_NAME" \
+              --name github-actions-ssh
+          fi
+
+      - name: Stop the SSH agent and clean temporary credentials
+        if: ${{ always() }}
+        run: |
+          if [ -n "${SSH_AGENT_PID:-}" ]; then
+            ssh-agent -k
+          fi
+          rm -f "$RUNNER_TEMP/deploy_key" \
+            "$RUNNER_TEMP/known_hosts" \
+            "$RUNNER_TEMP/inventory.json" \
+            "$RUNNER_TEMP/deploy-vars.json" \
+            "$RUNNER_TEMP/ssh-agent.env"

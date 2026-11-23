@@ -2,8 +2,15 @@
   hosts: sokopulse
   become: true
   vars:
-    app_image: sokopulse:f3
+    app_image: sokopulse:summative
     app_archive: "{{ playbook_dir }}/../sokopulse-image.tar"
+    deploy_from_acr: false
+
+  vars_prompt:
+    - name: db_password
+      prompt: Azure PostgreSQL admin password (database_admin_password in terraform.tfvars)
+      private: true
+      confirm: true
 
   pre_tasks:
     - name: Check deployment settings
@@ -11,10 +18,24 @@
         that:
           - ansible_facts['distribution'] == 'Ubuntu'
           - ansible_facts['architecture'] == 'x86_64'
-          - admin_source_cidr is defined
-          - admin_source_cidr is match('^[0-9.]+/[0-9]+$')
-          - admin_source_cidr != '0.0.0.0/0'
-        fail_msg: Use an Ubuntu amd64 VM and set a restricted admin_source_cidr.
+          - jumpbox_cidr is defined
+          - jumpbox_cidr is match('^[0-9.]+/[0-9]+$')
+          - app_url is defined
+          - db_host is defined
+          - db_name is defined
+          - db_user is defined
+          - db_password is match('^[A-Za-z0-9_-]{20,}$')
+        fail_msg: Use the generated Terraform inventory and the 20+ character database_admin_password from terraform.tfvars.
+
+    - name: Check ACR deployment settings
+      ansible.builtin.assert:
+        that:
+          - acr_name is defined
+          - acr_login_server is defined
+          - image_tag is defined
+          - image_tag is match('^[0-9a-f]{40}$')
+        fail_msg: ACR deployment requires Terraform inventory and a full 40-character commit SHA as image_tag.
+      when: deploy_from_acr | bool
 
     - name: Check the local image archive
       ansible.builtin.stat:
@@ -22,6 +43,7 @@
       delegate_to: localhost
       become: false
       register: local_archive
+      when: not (deploy_from_acr | bool)
 
     - name: Make sure the image was built
       ansible.builtin.assert:
@@ -29,8 +51,10 @@
           - local_archive.stat.exists
           - local_archive.stat.isreg
         fail_msg: Build and save the image first. See ansible/README.md.
+      when: not (deploy_from_acr | bool)
 
   roles:
     - docker
     - security
+    - registry
     - application

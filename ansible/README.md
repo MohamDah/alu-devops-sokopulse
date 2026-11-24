@@ -76,9 +76,10 @@ ansible-playbook -i ansible/inventory.sh ansible/playbook.yml \
 In this mode, the app VM signs in with its system-assigned managed identity,
 which Terraform grants the `AcrPull` role. Ansible pulls the image before
 replacing the running container, then logs out of ACR. The image must already
-exist in the registry. The merge-to-main CD workflow is drafted but not yet
-configured or validated in GitHub Actions; see the root
-[README](../README.md#continuous-deployment-draft) for its prerequisites.
+exist in the registry. The merge-to-main CD workflow uses this ACR deployment
+path and completed a successful end-to-end run; see the root
+[README](../README.md#continuous-deployment) for its configuration and run
+details.
 
 After deployment, verify the host and public endpoints:
 

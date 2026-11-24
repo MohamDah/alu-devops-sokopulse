@@ -140,7 +140,7 @@ How it is set up:
 
 ## Azure Infrastructure
 
-### Summative Terraform (in progress)
+### Summative Terraform
 
 The Terraform root describes the Azure stack: a public jumpbox restricted to the
 admin CIDR, a private app VM behind a Standard Load Balancer, and an
@@ -155,8 +155,11 @@ Ansible deploys the app container to the private VM through the jumpbox. See [th
 **Live demo:** [http://102.37.104.41/](http://102.37.104.41/) — HTTP only;
 use synthetic data and do not enter real payment details.
 
-Summative target architecture (the CD workflow still needs GitHub setup and a
-successful end-to-end run):
+The main-branch CD workflow has completed a successful end-to-end run,
+including deployment and Ansible verification. See
+[the successful GitHub Actions run](https://github.com/MohamDah/alu-devops-sokopulse/actions/runs/45231947887).
+
+Summative target architecture:
 
 ```text
 Users --HTTP:80--> Load Balancer --> Private app VM:3000
@@ -225,17 +228,19 @@ docker build -t sokopulse:ci .
 
 **Merging:** the `ci` check is required on `main` (see the table below). A pull request cannot be merged while it is failing, and a failed lint step skips the tests, Docker build and image scan. The Terraform scan still runs. The CI badge at the top links to the workflow; check the PR's own results before merging.
 
-## Continuous Deployment (draft)
+## Continuous Deployment
 
-The draft [CD workflow](.github/workflows/cd.yml) is designed to run on pushes
-to `main` (normally after a protected pull request is merged). It repeats the
-tests and scans, builds an AMD64 image tagged with the full commit SHA, pushes
-it to ACR, then deploys and verifies it through Ansible. The workflow has not
-yet been configured or run in GitHub Actions; the manual deployment documented
-in the [Ansible guide](ansible/README.md) remains the verified path.
+The [CD workflow](.github/workflows/cd.yml) runs on pushes to `main` (normally
+after a protected pull request is merged). It repeats the tests and scans,
+builds an AMD64 image tagged with the full commit SHA, pushes it to ACR, then
+deploys and verifies it through Ansible. It completed successfully on
+24 November 2026; see [run 4](https://github.com/MohamDah/alu-devops-sokopulse/actions/runs/45231947887).
+Opening a pull request runs CI, not CD.
 
-Before enabling it, configure the following under **Repository Settings →
-Secrets and variables → Actions**.
+The workflow uses repository variables and secrets configured under
+**Repository Settings → Secrets and variables → Actions**. Keep values and
+credentials out of Git; update the configuration if the infrastructure or
+identity changes.
 
 **Repository variables**
 
@@ -266,10 +271,10 @@ Secrets and variables → Actions**.
 | `JUMPBOX_KNOWN_HOSTS` | Verified jumpbox host-key entry or entries |
 | `APP_KNOWN_HOSTS` | Verified app VM host-key entry or entries |
 
-Configure an Entra federated credential that trusts this repository's `main`
-branch; do not use a long-lived Azure client secret. Scope `AcrPush` to the ACR
-and `Network Contributor` to the jumpbox NSG for the GitHub identity. Verify
-both SSH host keys through a trusted channel before saving them. The workflow
+The Entra federated credential trusts this repository's `main` branch; do not
+use a long-lived Azure client secret. Scope `AcrPush` to the ACR and
+`Network Contributor` to the jumpbox NSG for the GitHub identity. Verify both
+SSH host keys through a trusted channel before saving them. The workflow
 temporarily allows only the current runner's `/32` address to SSH to the
 jumpbox, removes that rule after deployment, and removes a stale rule at the
 start of a later run if a previous runner could not clean up.
@@ -281,7 +286,7 @@ alu-devops-sokopulse/
 ├── .github/
 │   ├── workflows/
 │   │   ├── ci.yml              # lint, tests, build and security scans
-│   │   └── cd.yml              # main-branch publish and deployment (draft)
+│   │   └── cd.yml              # main-branch publish and Ansible deployment
 │   ├── CODEOWNERS
 │   └── pull_request_template.md
 ├── public/                     # dashboard (HTML, CSS, JS)
@@ -372,6 +377,7 @@ output descriptions and how the assistance was used or modified.
 - [Terraform setup](terraform/README.md)
 - [Ansible deployment](ansible/README.md)
 - [Security findings](SECURITY.md)
+- [Team demo script](DEMO_SCRIPT.md)
 
 ## License
 

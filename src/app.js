@@ -14,7 +14,7 @@ const {
 } = require('./services/momo-service/momo.store');
 
 function createApp() {
-  const app = express();
+  // const app = express();
   const transactionStore = process.env.DATABASE_URL
     ? createPostgresTransactionStore(process.env.DATABASE_URL)
     : createInMemoryTransactionStore();

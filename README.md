@@ -377,7 +377,6 @@ output descriptions and how the assistance was used or modified.
 - [Terraform setup](terraform/README.md)
 - [Ansible deployment](ansible/README.md)
 - [Security findings](SECURITY.md)
-- [Team demo script](DEMO_SCRIPT.md)
 
 ## License
 

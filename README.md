@@ -155,6 +155,8 @@ Ansible deploys the app container to the private VM through the jumpbox. See [th
 **Live demo:** [http://102.37.104.41/](http://102.37.104.41/) — HTTP only;
 use synthetic data and do not enter real payment details.
 
+**Demo video:** [https://youtu.be/2MLivKSLMaI](https://youtu.be/2MLivKSLMaI).
+
 The main-branch CD workflow has completed a successful end-to-end run,
 including deployment and Ansible verification. See
 [the successful GitHub Actions run](https://github.com/MohamDah/alu-devops-sokopulse/actions/runs/45231947887).

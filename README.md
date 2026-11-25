@@ -159,26 +159,9 @@ The main-branch CD workflow has completed a successful end-to-end run,
 including deployment and Ansible verification. See
 [the successful GitHub Actions run](https://github.com/MohamDah/alu-devops-sokopulse/actions/runs/45231947887).
 
-Summative target architecture:
+Azure infrastructure and deployment wiring:
 
-```text
-Users --HTTP:80--> Load Balancer --> Private app VM:3000
-Admin IP --SSH--> Jumpbox --SSH--> Private app VM
-                                      |       |
-                                      |       +-- Managed identity: AcrPull
-                                      |                    |
-                                      |                    v
-                                      |               Private ACR
-                                      |
-                                      +-- TLS:5432 over peered VNets
-                                                    |
-                                                    v
-                                      Managed PostgreSQL (Spain Central)
-
-Merge to main --> CI/tests/scans --> CD builds SHA image --> ACR
-                                   --> temporary runner-IP SSH via jumpbox
-                                   --> Ansible + Docker Compose deploy
-```
+![Azure infrastructure and deployment wiring](assets/architecture_diagram.png)
 
 ### Formative 3 deployment (historical)
 

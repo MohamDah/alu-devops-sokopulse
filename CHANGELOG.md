@@ -24,7 +24,7 @@ and the Summative pipeline.
 - Added dependency, container-image and Terraform security scans.
 - Documented scan findings, remediation and accepted demo risks.
 
-## Summative — In progress
+## Summative — Complete
 
 - Added PostgreSQL-backed MoMo transaction storage and a database readiness
   check.

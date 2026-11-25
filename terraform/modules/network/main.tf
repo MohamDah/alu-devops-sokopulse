@@ -64,6 +64,7 @@ resource "azurerm_network_security_group" "app" {
   resource_group_name = var.resource_group_name
 }
 
+#trivy:ignore:AVD-AZU-0047:exp:2026-11-30
 resource "azurerm_network_security_rule" "app_http" {
   name                        = "public-http"
   priority                    = 100

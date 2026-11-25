@@ -25,7 +25,9 @@ load balancer also provides its outbound access for package and image
 downloads. ACR has admin credentials disabled; its public endpoint requires
 authenticated access. Manual Ansible deployment defaults to a local image
 archive; it can also pull SHA-tagged images from ACR using the app VM's
-managed identity. The merge-to-main CD workflow is still pending.
+managed identity. The main-branch CD workflow publishes and deploys
+SHA-tagged images; a successful end-to-end run is recorded in the root
+[README](../README.md#continuous-deployment).
 
 The managed database is Azure Database for PostgreSQL Flexible Server
 (Burstable B1ms, PostgreSQL 16, 7-day backups) in Spain Central. South Africa
@@ -47,7 +49,7 @@ over TLS.
 | Standard Load Balancer | Public HTTP entry point and app VM outbound path |
 | Database VNet, peering, private DNS | Private path from the app subnet to PostgreSQL |
 | PostgreSQL Flexible Server | Managed database for MoMo transactions |
-| Azure Container Registry | Reserved for image publishing in a later CI/CD workflow |
+| Azure Container Registry | Stores SHA-tagged images published by the main-branch CD workflow |
 
 ## Prerequisites
 

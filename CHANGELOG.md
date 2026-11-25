@@ -31,5 +31,5 @@ and the Summative pipeline.
 - Added a private managed PostgreSQL server in Spain Central, VNet peering,
   private DNS and database network rules.
 - Added Ansible deployment support for Docker Compose and SHA-tagged ACR images.
-- Drafted a main-branch GitHub Actions CD workflow; its GitHub identity,
-  repository settings, live deployment and end-to-end run are not yet verified.
+- Added a main-branch GitHub Actions CD workflow and completed a successful
+  end-to-end deployment and Ansible verification on 23 November 2026.
